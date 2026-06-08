@@ -1,0 +1,91 @@
+server:
+  port: 9000
+  tomcat:
+    basedir: .
+    accesslog:
+      enabled: true
+      buffered: false
+      directory: logs
+      prefix: access
+      suffix: .log
+      pattern: '%t %a "%r" %s %b %D'
+
+logging:
+  file:
+    name: logs/api-gateway.log
+
+openapi:
+  gateway:
+    docs-access-token: ${OPENAPI_GATEWAY_DOCS_ACCESS_TOKEN:local-gateway-docs-token}
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+    disable-swagger-default-url: true
+    urls-primary-name: Tenant Administration Service
+    urls:
+      - name: Tenant Administration Service
+        url: /v3/api-docs/tenant
+
+spring:
+  application:
+    name: api-gateway
+
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          routes:
+            # 1. Management Console UI Route
+            - id: kafka_ui
+              uri: http://localhost:8989
+              predicates:
+                - Path=/kafka-ui,/kafka-ui/**
+              filters:
+                - TokenRelay=
+              metadata:
+                required-role: SUPER_ADMIN
+
+            # 2. CORE Business API Tenant Routes
+            - id: tenant_administration_service
+              uri: http://localhost:8080
+              predicates:
+                - Path=/v1/tenants,/v1/tenants/**
+              filters:
+                - TokenRelay=
+              metadata:
+                required-role: SUPER_ADMIN
+
+            # 3. OpenAPI Docs Aggregator Route
+            - id: tenant_administration_docs
+              uri: http://localhost:8080
+              predicates:
+                - Path=/v3/api-docs/tenant
+              filters:
+                - AddRequestHeader=X-Internal-OpenApi-Access,${openapi.gateway.docs-access-token}
+                - SetPath=/v3/api-docs
+
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            client-id: replato-gateway
+            client-secret: Fdu40gsWOf0HiSqSftcL5KkmIsVwdDW7
+            scope: openid,profile,email
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        provider:
+          keycloak:
+            issuer-uri: http://localhost:8180/realms/replato-gateway
+            authorization-uri: http://localhost:8180/realms/replato-gateway/protocol/openid-connect/auth
+            token-uri: http://localhost:8180/realms/replato-gateway/protocol/openid-connect/token
+            user-info-uri: http://localhost:8180/realms/replato-gateway/protocol/openid-connect/userinfo
+            jwk-set-uri: http://localhost:8180/realms/replato-gateway/protocol/openid-connect/certs
+            user-name-attribute: preferred_username
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/replato-gateway
+          jwk-set-uri: http://localhost:8180/realms/replato-gateway/protocol/openid-connect/certs
