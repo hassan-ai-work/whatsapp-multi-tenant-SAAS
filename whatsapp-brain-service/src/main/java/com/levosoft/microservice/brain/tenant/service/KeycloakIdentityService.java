@@ -53,9 +53,18 @@ public class KeycloakIdentityService {
             // STEP 1: Construct and save the basic user profile metadata container
             UserRepresentation user = new UserRepresentation();
             user.setEnabled(true);
-            user.setUsername(tenant.getName().toLowerCase());
-            user.setEmail(tenant.getName().toLowerCase() + "@tenant-replato.com");
-            user.setAttributes(Map.of("tenant_id", Collections.singletonList(String.valueOf(tenant.getId()))));
+            user.setUsername(tenant.getUsername().toLowerCase());
+            user.setEmail(tenant.getEmail());
+            user.setFirstName(tenant.getFirstName());
+            user.setLastName(tenant.getLastName());
+
+            // Map all configuration boundaries dynamically into Keycloak user attributes
+            user.setAttributes(Map.of(
+                    "tenant_id", Collections.singletonList(String.valueOf(tenant.getId())),
+                    "tenant_plan", Collections.singletonList(String.valueOf(tenant.getPlan())),
+                    "billing_status", Collections.singletonList(String.valueOf(tenant.getBillingStatus())),
+                    "timezone", Collections.singletonList(tenant.getTimezone())
+            ));
             user.setRequiredActions(Collections.emptyList()); // Ensures no post-login actions attach
 
             String createdUserId;
@@ -91,8 +100,8 @@ public class KeycloakIdentityService {
         }
     }
 
-    public void deprovisionKeycloakUser(String tenantName) {
-        String usernameToSearch = tenantName.toLowerCase();
+    public void deprovisionKeycloakUser(String username) {
+        String usernameToSearch = username.toLowerCase();
         log.info("Connecting to Keycloak Admin API target to delete user: {}", usernameToSearch);
 
         try (Keycloak keycloak = buildKeycloakClient()) {

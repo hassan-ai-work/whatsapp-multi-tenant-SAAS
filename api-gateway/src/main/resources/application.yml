@@ -79,7 +79,6 @@ spring:
             redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
         provider:
           keycloak:
-            issuer-uri: http://localhost:8180/realms/replato-gateway
             authorization-uri: http://localhost:8180/realms/replato-gateway/protocol/openid-connect/auth
             token-uri: http://localhost:8180/realms/replato-gateway/protocol/openid-connect/token
             user-info-uri: http://localhost:8180/realms/replato-gateway/protocol/openid-connect/userinfo

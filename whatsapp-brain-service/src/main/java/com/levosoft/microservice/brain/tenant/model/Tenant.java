@@ -1,20 +1,8 @@
 package com.levosoft.microservice.brain.tenant.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.annotations.UpdateTimestamp;
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.*;
 import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
@@ -28,11 +16,33 @@ import java.time.OffsetDateTime;
 public class Tenant {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY) // Matches PostgreSQL bigserial
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "name", nullable = false)
-    private String name;
+    @Column(name = "username", nullable = false, unique = true)
+    private String username;
+
+    @Column(name = "first_name", nullable = false)
+    private String firstName;
+
+    @Column(name = "last_name")
+    private String lastName;
+
+    @Column(name = "email", nullable = false, unique = true)
+    private String email;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "plan", nullable = false, columnDefinition = "tenant_plan")
+    private TenantPlan plan = TenantPlan.FREE;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "billing_status", nullable = false, columnDefinition = "billing_status")
+    private BillingStatus billingStatus = BillingStatus.OK;
+
+    @Column(name = "timezone", nullable = false)
+    private String timezone = "UTC";
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)

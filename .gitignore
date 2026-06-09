@@ -1,2 +1,7 @@
 .idea
 .aider*
+logs
+# Database data directories
+whatsapp-brain-service/postgres-data/
+api-gateway/keycloak/postgres-data/
+**/postgres-data/

@@ -27,7 +27,7 @@ public class TenantAdminController {
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Provision a new tenant environment", description = "Creates structural metadata registries for an isolated client.")
     public TenantResponse createTenant(@Valid @RequestBody TenantRequest tenantRequest) {
-        log.info("API Gateway triggered tenant creation route for name: {}", tenantRequest.name());
+        log.info("API Gateway triggered tenant creation route for username: {}", tenantRequest.username());
         return tenantService.createTenant(tenantRequest);
     }
 
@@ -44,7 +44,7 @@ public class TenantAdminController {
     @Operation(summary = "List all tenants", description = "Retrieves a comprehensive registry list of all system tenants.")
     public List<TenantResponse> getAllTenants() {
         log.info("Fetching registry list for all tenants");
-        return tenantService.listTenants(); // Matches your internal method name
+        return tenantService.listTenants();
     }
 
     @PutMapping("/{id}")

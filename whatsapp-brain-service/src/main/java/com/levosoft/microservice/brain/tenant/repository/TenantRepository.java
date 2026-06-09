@@ -8,6 +8,12 @@ import java.util.Optional;
 
 @Repository
 public interface TenantRepository extends JpaRepository<Tenant, Long> {
-    boolean existsByName(String name);
-    Optional<Tenant> findByName(String name);
+
+    // Checks for duplicate data entry before saving records
+    boolean existsByUsername(String username);
+    boolean existsByEmail(String email);
+
+    // Flexible lookup parameters for authentication or context setting
+    Optional<Tenant> findByUsername(String username);
+    Optional<Tenant> findByEmail(String email);
 }

@@ -24,16 +24,26 @@ public class TenantService {
 
     @Transactional
     public TenantResponse createTenant(TenantRequest tenantRequest) {
-        log.info("Start - validating and provisioning tenant for name: {}", tenantRequest.name());
+        log.info("Start - validating and provisioning tenant for username: {}", tenantRequest.username());
 
-        if (tenantRepository.existsByName(tenantRequest.name())) {
-            log.error("Conflict detected: Tenant name '{}' is already registered", tenantRequest.name());
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Tenant name already exists");
+        if (tenantRepository.existsByUsername(tenantRequest.username())) {
+            log.error("Conflict detected: Tenant username '{}' is already registered", tenantRequest.username());
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Tenant username already exists");
+        }
+
+        if (tenantRepository.existsByEmail(tenantRequest.email())) {
+            log.error("Conflict detected: Tenant email '{}' is already registered", tenantRequest.email());
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Tenant email already exists");
         }
 
         Tenant tenant = new Tenant();
-        tenant.setName(tenantRequest.name());
-        tenant.setStatus(TenantStatus.ACTIVE);
+        tenant.setUsername(tenantRequest.username().toLowerCase());
+        tenant.setFirstName(tenantRequest.firstName());
+        tenant.setLastName(tenantRequest.lastName());
+        tenant.setEmail(tenantRequest.email());
+        tenant.setPlan(tenantRequest.plan());
+        tenant.setBillingStatus(tenantRequest.billingStatus());
+        tenant.setTimezone(tenantRequest.timezone());
 
         Tenant savedTenant = tenantRepository.save(tenant);
         log.info("End - Tenant successfully saved with database sequence key: {}", savedTenant.getId());
@@ -66,12 +76,23 @@ public class TenantService {
         Tenant tenant = tenantRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found with ID: " + id));
 
-        if (!tenant.getName().equalsIgnoreCase(tenantRequest.name()) && tenantRepository.existsByName(tenantRequest.name())) {
-            log.error("Conflict detected: Tenant name '{}' is already taken by another registry", tenantRequest.name());
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Tenant name already exists");
+        if (!tenant.getUsername().equalsIgnoreCase(tenantRequest.username()) && tenantRepository.existsByUsername(tenantRequest.username())) {
+            log.error("Conflict detected: Tenant username '{}' is already taken by another registry", tenantRequest.username());
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Tenant username already exists");
         }
 
-        tenant.setName(tenantRequest.name());
+        if (!tenant.getEmail().equalsIgnoreCase(tenantRequest.email()) && tenantRepository.existsByEmail(tenantRequest.email())) {
+            log.error("Conflict detected: Tenant email '{}' is already taken by another registry", tenantRequest.email());
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Tenant email already exists");
+        }
+
+        tenant.setUsername(tenantRequest.username().toLowerCase());
+        tenant.setFirstName(tenantRequest.firstName());
+        tenant.setLastName(tenantRequest.lastName());
+        tenant.setEmail(tenantRequest.email());
+        tenant.setPlan(tenantRequest.plan());
+        tenant.setBillingStatus(tenantRequest.billingStatus());
+        tenant.setTimezone(tenantRequest.timezone());
 
         Tenant updatedTenant = tenantRepository.save(tenant);
         log.info("End - Tenant configurations updated successfully for ID: {}", updatedTenant.getId());
@@ -86,8 +107,8 @@ public class TenantService {
         Tenant tenant = tenantRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found with ID: " + id));
 
-        // 1. Drop data inside Keycloak using identity provider boundary module
-        keycloakIdentityService.deprovisionKeycloakUser(tenant.getName());
+        // 1. Drop data inside Keycloak using identity provider boundary module via unique username
+        keycloakIdentityService.deprovisionKeycloakUser(tenant.getUsername());
 
         // 2. Drop database row entity records
         tenantRepository.deleteById(id);
@@ -97,10 +118,16 @@ public class TenantService {
     private TenantResponse mapToTenantResponse(Tenant tenant) {
         return new TenantResponse(
                 tenant.getId(),
-                tenant.getName(),
+                tenant.getUsername(),
+                tenant.getFirstName(),
+                tenant.getLastName(),
                 tenant.getStatus(),
                 tenant.getCreatedAt(),
-                tenant.getUpdatedAt()
+                tenant.getUpdatedAt(),
+                tenant.getEmail(),
+                tenant.getPlan(),
+                tenant.getBillingStatus(),
+                tenant.getTimezone()
         );
     }
 }
