@@ -1,13 +1,13 @@
 # 🧠 whatsapp-brain-service
 
 <p align="left">
-  <img src="https://shields.io" alt="Java" />
-  <img src="https://shields.io" alt="Spring Boot" />
-  <img src="https://shields.io" alt="Apache Kafka" />
-  <img src="https://shields.io" alt="PostgreSQL" />
-  <img src="https://shields.io" alt="Redis" />
-  <img src="https://shields.io" alt="Docker" />
-  <img src="https://shields.io" alt="OpenAI" />
+  <a href="#"><img src="https://shields.io" alt="Java"/></a>
+  <a href="#"><img src="https://shields.io" alt="Spring Boot"/></a>
+  <a href="#"><img src="https://shields.io" alt="Apache Kafka"/></a>
+  <a href="#"><img src="https://shields.io" alt="PostgreSQL"/></a>
+  <a href="#"><img src="https://shields.io" alt="Redis"/></a>
+  <a href="#"><img src="https://shields.io" alt="Docker"/></a>
+  <a href="#"><img src="https://shields.io" alt="OpenAI"/></a>
 </p>
 
 This is the core AI orchestration microservice for the multi-tenant WhatsApp AI Agent ecosystem. It functions as an internal resource server sitting safely behind the API Gateway.
