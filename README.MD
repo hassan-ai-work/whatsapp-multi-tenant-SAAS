@@ -1,5 +1,15 @@
 # 🧠 whatsapp-brain-service
 
+<p align="left">
+  <img src="https://shields.io" alt="Java" />
+  <img src="https://shields.io" alt="Spring Boot" />
+  <img src="https://shields.io" alt="Apache Kafka" />
+  <img src="https://shields.io" alt="PostgreSQL" />
+  <img src="https://shields.io" alt="Redis" />
+  <img src="https://shields.io" alt="Docker" />
+  <img src="https://shields.io" alt="OpenAI" />
+</p>
+
 This is the core AI orchestration microservice for the multi-tenant WhatsApp AI Agent ecosystem. It functions as an internal resource server sitting safely behind the API Gateway.
 
 ## 🚀 Key Responsibilities
@@ -8,7 +18,7 @@ This is the core AI orchestration microservice for the multi-tenant WhatsApp AI 
 * **Semantic Retrieval (RAG):** Queries enterprise business documentation streams out of PostgreSQL (`pgvector`).
 * **AI Generation:** Interfaces with LLMs (OpenAI / Ollama) via LangChain4j and manages cyclic multi-agent states using LangGraph4j.
 * **Multi-Tenancy:** Ensures strict data isolation by appending logical tenant filtering to standard text logs.
-* *MCP:** MCP Server for contracts.
+* **MCP:** MCP Server for contracts.
 
 ## 🛠️ Technology Stack
 * **Runtime:** Java 21 / Spring Boot 4.x
