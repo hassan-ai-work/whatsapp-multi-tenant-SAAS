@@ -54,6 +54,13 @@ public class TenantService {
         return mapToTenantResponse(savedTenant);
     }
 
+    public TenantResponse getTenantByUsername(String username) {
+        log.info("Searching for tenant with username: {}", username);
+        Tenant tenant = tenantRepository.findByUsername(username)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found with username: " + username));
+        return mapToTenantResponse(tenant);
+    }
+
     public TenantResponse getTenantById(Long id) {
         log.info("Searching for tenant with sequence key: {}", id);
         Tenant tenant = tenantRepository.findById(id)

@@ -55,10 +55,20 @@ spring:
                 - Path=/v1/tenants,/v1/tenants/**
               filters:
                 - TokenRelay=
+                - InjectUsername=
               metadata:
                 required-role: SUPER_ADMIN
 
-            # 3. OpenAPI Docs Aggregator Route
+            # 3. Tenant Self Service Route
+            - id: tenant_self_service
+              uri: http://localhost:8080
+              predicates:
+                - Path=/v1/tenant
+              filters:
+                - TokenRelay=
+                - InjectUsername=
+
+            # 4. OpenAPI Docs Aggregator Route
             - id: tenant_administration_docs
               uri: http://localhost:8080
               predicates:

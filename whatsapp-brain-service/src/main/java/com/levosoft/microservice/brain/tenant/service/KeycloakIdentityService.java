@@ -85,7 +85,7 @@ public class KeycloakIdentityService {
 
             CredentialRepresentation passwordCredential = new CredentialRepresentation();
             passwordCredential.setType(CredentialRepresentation.PASSWORD);
-            passwordCredential.setValue("InitialTenantPassword123!");
+            passwordCredential.setValue("test");
             passwordCredential.setTemporary(false); // Keycloak strictly honors this flag when called separately
 
             // Force override the password through the dedicated reset API
