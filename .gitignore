@@ -5,3 +5,4 @@ logs
 whatsapp-brain-service/postgres-data/
 api-gateway/keycloak/postgres-data/
 **/postgres-data/
+kafka-service/minio-data/

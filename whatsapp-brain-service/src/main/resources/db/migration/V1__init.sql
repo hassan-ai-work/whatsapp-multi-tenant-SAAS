@@ -165,7 +165,11 @@ CREATE TABLE IF NOT EXISTS document_chunks (
                                                content     TEXT NOT NULL,
                                                embedding   VECTOR(1536) NOT NULL,
                                                metadata    JSONB NOT NULL DEFAULT '{}'::jsonb,
+                                               chunk_index_int INT GENERATED ALWAYS AS ((metadata->>'chunkIndex')::INT) STORED,
+                                               chunk_hash_text TEXT GENERATED ALWAYS AS (metadata->>'chunkHash') STORED,
                                                created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                                               CONSTRAINT ux_document_chunks_idempotency
+                                                   UNIQUE (tenant_id, document_id, chunk_index_int, chunk_hash_text),
                                                CONSTRAINT fk_document_chunks_document_validation
                                                    FOREIGN KEY (document_id, tenant_id) REFERENCES documents(id, tenant_id) ON DELETE CASCADE
 );
