@@ -2,6 +2,7 @@
 .aider*
 credentials.txt
 .env
+AGENT.md
 **/.env
 logs
 

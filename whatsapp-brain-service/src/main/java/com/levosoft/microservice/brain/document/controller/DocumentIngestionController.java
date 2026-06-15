@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -37,6 +38,10 @@ public class DocumentIngestionController {
             @RequestHeader("X-Authenticated-User")
             @Parameter(description = "Authenticated username")
             String authenticatedUser,
+            @RequestParam("businessId")
+            @NotNull(message = "businessId is required")
+            @Parameter(description = "Owning business identifier", required = true)
+            Long businessId,
             @RequestParam("file")
             @Parameter(description = "Document file to upload", required = true)
             MultipartFile file,
@@ -45,6 +50,6 @@ public class DocumentIngestionController {
             @Parameter(description = "Document title", required = true)
             String title
     ) {
-        return documentIngestionService.ingest(authenticatedUser, file, title);
+        return documentIngestionService.ingest(authenticatedUser, businessId, file, title);
     }
 }

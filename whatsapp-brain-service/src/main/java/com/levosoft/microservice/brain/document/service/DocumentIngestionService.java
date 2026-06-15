@@ -1,5 +1,6 @@
 package com.levosoft.microservice.brain.document.service;
 
+import com.levosoft.microservice.brain.business.repository.TenantBusinessRepository;
 import com.levosoft.microservice.brain.document.config.DocumentIngestionProperties;
 import com.levosoft.microservice.brain.document.dto.DocumentIngestAcceptedResponse;
 import com.levosoft.microservice.brain.document.dto.DocumentIngestionEvent;
@@ -31,41 +32,53 @@ public class DocumentIngestionService {
 
     private final DocumentRepository documentRepository;
     private final TenantRepository tenantRepository;
+    private final TenantBusinessRepository tenantBusinessRepository;
     private final DocumentStorageService documentStorageService;
     private final KafkaTemplate<String, DocumentIngestionEvent> kafkaTemplate;
     private final DocumentIngestionProperties properties;
 
     public DocumentIngestAcceptedResponse ingest(
             String authenticatedUsername,
+            Long businessId,
             MultipartFile file,
             String title
     ) {
-        validateRequest(authenticatedUsername, file, title);
+        validateRequest(authenticatedUsername, businessId, file, title);
 
         String normalizedUsername = authenticatedUsername.trim().toLowerCase();
         String normalizedTitle = title.trim();
         Long tenantId = resolveTenantId(normalizedUsername);
+        validateBusinessOwnership(tenantId, businessId);
+
         UUID ingestRequestId = UUID.randomUUID();
         String originalFilename = sanitizeFilename(file.getOriginalFilename());
-        String s3Key = buildS3Key(tenantId, originalFilename, ingestRequestId);
+        String s3Key = buildS3Key(tenantId, businessId, originalFilename, ingestRequestId);
 
         Map<String, Object> documentMetadata = buildDocumentMetadata(
+                businessId,
                 originalFilename,
                 file.getContentType(),
                 file.getSize(),
                 ingestRequestId
         );
 
-        // 1. Save metadata in its own transaction and commit immediately as PENDING
-        Document savedDocument = saveInitialDocumentMetadata(tenantId, normalizedTitle, s3Key, documentMetadata, normalizedUsername, ingestRequestId);
+        Document savedDocument = saveInitialDocumentMetadata(
+                tenantId,
+                businessId,
+                normalizedTitle,
+                s3Key,
+                documentMetadata,
+                normalizedUsername,
+                ingestRequestId
+        );
 
         try {
-            // 2. Perform slow network I/O outside of any DB transaction
             documentStorageService.upload(s3Key, file);
 
             DocumentIngestionEvent event = new DocumentIngestionEvent(
                     savedDocument.getId(),
                     tenantId,
+                    businessId,
                     normalizedTitle,
                     s3Key,
                     s3Key,
@@ -79,29 +92,28 @@ public class DocumentIngestionService {
                     documentMetadata
             );
 
-            // 3. Block or handle the future to ensure Kafka actually received the event
             kafkaTemplate.send(properties.documentIngestion(), String.valueOf(tenantId), event).get();
 
             log.info(
-                    "Document ingest event published. documentId={}, tenantId={}, ingestRequestId={}, topic={}, s3Key={}",
+                    "Document ingest event published. documentId={}, tenantId={}, businessId={}, ingestRequestId={}, topic={}, s3Key={}",
                     savedDocument.getId(),
                     tenantId,
+                    businessId,
                     ingestRequestId,
                     properties.documentIngestion(),
                     s3Key
             );
 
-            // SUCCESS MARKER: The ingestion intake flow completed perfectly. Mark as PROCESSED in the DB.
             markDocumentAsProcessed(savedDocument.getId());
 
             return new DocumentIngestAcceptedResponse(SAFE_ACCEPTED_MESSAGE);
         } catch (Exception ex) {
-            // 4. Update status to FAILED in a fresh transaction if S3 or Kafka fails
             markDocumentAsFailed(savedDocument.getId());
             log.error(
-                    "Document ingestion failed. documentId={}, tenantId={}, ingestRequestId={}, s3Key={}",
+                    "Document ingestion failed. documentId={}, tenantId={}, businessId={}, ingestRequestId={}, s3Key={}",
                     savedDocument.getId(),
                     tenantId,
+                    businessId,
                     ingestRequestId,
                     s3Key,
                     ex
@@ -112,9 +124,18 @@ public class DocumentIngestionService {
     }
 
     @Transactional
-    public Document saveInitialDocumentMetadata(Long tenantId, String title, String s3Key, Map<String, Object> metadata, String username, UUID ingestRequestId) {
+    public Document saveInitialDocumentMetadata(
+            Long tenantId,
+            Long businessId,
+            String title,
+            String s3Key,
+            Map<String, Object> metadata,
+            String username,
+            UUID ingestRequestId
+    ) {
         Document document = new Document();
         document.setTenantId(tenantId);
+        document.setBusinessId(businessId);
         document.setTitle(title);
         document.setSource(s3Key);
         document.setStatus(DocumentStatus.PENDING);
@@ -123,8 +144,8 @@ public class DocumentIngestionService {
         Document savedDocument = documentRepository.save(document);
 
         log.info(
-                "Document metadata committed to database. documentId={}, tenantId={}, ingestRequestId={}, username={}",
-                savedDocument.getId(), tenantId, ingestRequestId, username
+                "Document metadata committed to database. documentId={}, tenantId={}, businessId={}, ingestRequestId={}, username={}",
+                savedDocument.getId(), tenantId, businessId, ingestRequestId, username
         );
         return savedDocument;
     }
@@ -134,7 +155,11 @@ public class DocumentIngestionService {
         documentRepository.findById(documentId).ifPresent(document -> {
             document.setStatus(DocumentStatus.PROCESSED);
             documentRepository.save(document);
-            log.info("Document ingestion stage completed successfully. Status updated to PROCESSED. documentId={}", documentId);
+            log.info(
+                    "Document ingestion stage completed successfully. Status updated to PROCESSED. documentId={}, businessId={}",
+                    documentId,
+                    document.getBusinessId()
+            );
         });
     }
 
@@ -143,13 +168,21 @@ public class DocumentIngestionService {
         documentRepository.findById(documentId).ifPresent(document -> {
             document.setStatus(DocumentStatus.FAILED);
             documentRepository.save(document);
-            log.warn("Document marked as FAILED during ingest stage. documentId={}, tenantId={}", document.getId(), document.getTenantId());
+            log.warn(
+                    "Document marked as FAILED during ingest stage. documentId={}, tenantId={}, businessId={}",
+                    document.getId(),
+                    document.getTenantId(),
+                    document.getBusinessId()
+            );
         });
     }
 
-    private void validateRequest(String authenticatedUsername, MultipartFile file, String title) {
+    private void validateRequest(String authenticatedUsername, Long businessId, MultipartFile file, String title) {
         if (authenticatedUsername == null || authenticatedUsername.isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing or blank X-Authenticated-User header");
+        }
+        if (businessId == null || businessId <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "businessId must be a positive number");
         }
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Required multipart field 'file' must not be empty");
@@ -165,8 +198,16 @@ public class DocumentIngestionService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found for authenticated user"));
     }
 
-    private String buildS3Key(Long tenantId, String originalFilename, UUID ingestRequestId) {
-        return "document-ingestion/" + tenantId + "/" + ingestRequestId + "/" + originalFilename;
+    private void validateBusinessOwnership(Long tenantId, Long businessId) {
+        tenantBusinessRepository.findByIdAndTenantId(businessId, tenantId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Business not found with ID: " + businessId + " for tenant ID: " + tenantId
+                ));
+    }
+
+    private String buildS3Key(Long tenantId, Long businessId, String originalFilename, UUID ingestRequestId) {
+        return "document-ingestion/" + tenantId + "/" + businessId + "/" + ingestRequestId + "/" + originalFilename;
     }
 
     private String sanitizeFilename(String originalFilename) {
@@ -176,8 +217,15 @@ public class DocumentIngestionService {
         return originalFilename.replace("\\", "_").replace("/", "_");
     }
 
-    private Map<String, Object> buildDocumentMetadata(String originalFilename, String contentType, long sizeBytes, UUID ingestRequestId) {
+    private Map<String, Object> buildDocumentMetadata(
+            Long businessId,
+            String originalFilename,
+            String contentType,
+            long sizeBytes,
+            UUID ingestRequestId
+    ) {
         Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("businessId", businessId);
         metadata.put("originalFilename", originalFilename);
         metadata.put("contentType", contentType != null ? contentType : "application/octet-stream");
         metadata.put("sizeBytes", sizeBytes);

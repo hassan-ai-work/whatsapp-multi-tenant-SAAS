@@ -1,9 +1,7 @@
-package com.levosoft.microservice.brain.document.model;
+package com.levosoft.microservice.brain.channel.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -13,45 +11,33 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
-import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
-import java.util.Map;
 
 @Entity
-@Table(name = "documents")
+@Table(name = "tenant_registered_channels", schema = "public")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class Document {
+public class TenantRegisteredChannel {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_id", nullable = false)
-    private Long tenantId;
-
     @Column(name = "business_id", nullable = false)
     private Long businessId;
 
-    @Column(name = "title", nullable = false)
-    private String title;
+    @Column(name = "channel_code", nullable = false)
+    private String channelCode;
 
-    @Column(name = "source", nullable = false)
-    private String source;
+    @Column(name = "display_name", nullable = false)
+    private String displayName;
 
-    @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    @Column(name = "status", nullable = false, columnDefinition = "document_status")
-    private DocumentStatus status = DocumentStatus.PENDING;
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "metadata", nullable = false, columnDefinition = "jsonb")
-    private Map<String, Object> metadata;
+    @Column(name = "linked_status", nullable = false)
+    private Boolean linkedStatus;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

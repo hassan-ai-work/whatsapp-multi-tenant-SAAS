@@ -83,52 +83,100 @@ CREATE TRIGGER trg_tenant_configs_set_updated_at
 EXECUTE FUNCTION update_modified_column();
 
 -- =====================================================================
--- 4. Global Canonical Users
+-- 4. Tenant Businesses & Channels
 -- =====================================================================
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE IF NOT EXISTS tenant_business (
+                                     id                 BIGSERIAL PRIMARY KEY,
+                                     tenant_id          BIGINT NOT NULL,
+                                     business_name      TEXT NOT NULL,
+                                     description        TEXT,
+                                     registered_number  TEXT NOT NULL UNIQUE,
+                                     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                                     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                                     CONSTRAINT fk_tenant_business_tenant
+                                         FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+                                     CONSTRAINT ux_tenant_business_tenant_identity
+                                         UNIQUE (id, tenant_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_business_tenant
+    ON tenant_business (tenant_id);
+
+CREATE TRIGGER trg_tenant_business_set_updated_at
+    BEFORE UPDATE ON tenant_business
+    FOR EACH ROW
+EXECUTE FUNCTION update_modified_column();
+
+CREATE TABLE IF NOT EXISTS channels (
                                      id            BIGSERIAL PRIMARY KEY,
-                                     external_id   TEXT NOT NULL UNIQUE,
-                                     global_status TEXT NOT NULL DEFAULT 'ACTIVE',
-                                     user_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                                     code          TEXT NOT NULL UNIQUE,
                                      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                                      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TRIGGER trg_users_set_updated_at
-    BEFORE UPDATE ON users
+CREATE TRIGGER trg_channels_set_updated_at
+    BEFORE UPDATE ON channels
+    FOR EACH ROW
+EXECUTE FUNCTION update_modified_column();
+
+INSERT INTO channels (code)
+VALUES ('whatsapp'), ('telegram')
+ON CONFLICT (code) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS tenant_registered_channels (
+                                     id              BIGSERIAL PRIMARY KEY,
+                                     business_id     BIGINT NOT NULL,
+                                     channel_code    TEXT NOT NULL,
+                                     display_name    TEXT NOT NULL,
+                                     linked_status   BOOLEAN NOT NULL DEFAULT FALSE,
+                                     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                                     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                                     CONSTRAINT fk_tenant_registered_channels_business
+                                         FOREIGN KEY (business_id) REFERENCES tenant_business(id) ON DELETE CASCADE,
+                                     CONSTRAINT fk_tenant_registered_channels_channel
+                                         FOREIGN KEY (channel_code) REFERENCES channels(code) ON DELETE RESTRICT,
+                                     CONSTRAINT ux_tenant_registered_channels_business_channel
+                                         UNIQUE (business_id, channel_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_registered_channels_business
+    ON tenant_registered_channels (business_id);
+
+CREATE TRIGGER trg_tenant_registered_channels_set_updated_at
+    BEFORE UPDATE ON tenant_registered_channels
     FOR EACH ROW
 EXECUTE FUNCTION update_modified_column();
 
 -- =====================================================================
--- 5. Tenant-Scoped Long-Term User Memories
+-- 5. Tenant-Scoped Long-Term Contact Memories
 -- =====================================================================
-CREATE TABLE IF NOT EXISTS user_memories (
-                                             id               BIGSERIAL PRIMARY KEY,
-                                             tenant_id        BIGINT NOT NULL,
-                                             user_id          BIGINT NOT NULL,
-                                             memory_type      TEXT NOT NULL DEFAULT 'FACT',
-                                             content          TEXT NOT NULL,
-                                             embedding        VECTOR(1536) NOT NULL,
-                                             idempotency_hash TEXT NOT NULL,
-                                             created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                                             updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                                             CONSTRAINT fk_user_memories_tenant
+CREATE TABLE IF NOT EXISTS contact_memories (
+                                             id                BIGSERIAL PRIMARY KEY,
+                                             tenant_id         BIGINT NOT NULL,
+                                             business_id       BIGINT NOT NULL,
+                                             contact_identifier TEXT NOT NULL,
+                                             contact_chat_text JSONB NOT NULL,
+                                             embedding         VECTOR(1536) NOT NULL,
+                                             idempotency_hash   TEXT NOT NULL,
+                                             created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                                             updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                                             CONSTRAINT fk_contact_memories_tenant
                                                  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
-                                             CONSTRAINT fk_user_memories_user
-                                                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                                             CONSTRAINT ux_user_memories_tenant_user_identity
-                                                 UNIQUE (tenant_id, user_id)
+                                             CONSTRAINT fk_contact_memories_business
+                                                 FOREIGN KEY (business_id, tenant_id) REFERENCES tenant_business(id, tenant_id) ON DELETE CASCADE,
+                                             CONSTRAINT ux_contact_memories_identity
+                                                 UNIQUE (tenant_id, business_id, contact_identifier, idempotency_hash)
 );
 
-CREATE INDEX IF NOT EXISTS idx_user_memories_lookup
-    ON user_memories (tenant_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_contact_memories_lookup
+    ON contact_memories (tenant_id, business_id, contact_identifier);
 
-CREATE INDEX IF NOT EXISTS idx_user_memories_hnsw_cosine_embedding
-    ON user_memories
+CREATE INDEX IF NOT EXISTS idx_contact_memories_hnsw_cosine_embedding
+    ON contact_memories
         USING hnsw (embedding vector_cosine_ops);
 
-CREATE TRIGGER trg_user_memories_set_updated_at
-    BEFORE UPDATE ON user_memories
+CREATE TRIGGER trg_contact_memories_set_updated_at
+    BEFORE UPDATE ON contact_memories
     FOR EACH ROW
 EXECUTE FUNCTION update_modified_column();
 
@@ -138,6 +186,7 @@ EXECUTE FUNCTION update_modified_column();
 CREATE TABLE IF NOT EXISTS documents (
                                          id          BIGSERIAL PRIMARY KEY,
                                          tenant_id   BIGINT NOT NULL,
+                                         business_id BIGINT NOT NULL,
                                          title       TEXT NOT NULL,
                                          source      TEXT NOT NULL,
                                          status      document_status NOT NULL DEFAULT 'PENDING',
@@ -146,12 +195,19 @@ CREATE TABLE IF NOT EXISTS documents (
                                          updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                                          CONSTRAINT fk_documents_tenant
                                              FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+                                         CONSTRAINT fk_documents_business
+                                             FOREIGN KEY (business_id, tenant_id) REFERENCES tenant_business(id, tenant_id) ON DELETE CASCADE,
                                          CONSTRAINT ux_documents_tenant_identity
-                                             UNIQUE (id, tenant_id)
+                                             UNIQUE (id, tenant_id),
+                                         CONSTRAINT ux_documents_business_identity
+                                             UNIQUE (id, business_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_documents_tenant
     ON documents (tenant_id);
+
+CREATE INDEX IF NOT EXISTS idx_documents_business
+    ON documents (business_id);
 
 CREATE TRIGGER trg_documents_set_updated_at
     BEFORE UPDATE ON documents
@@ -161,6 +217,7 @@ EXECUTE FUNCTION update_modified_column();
 CREATE TABLE IF NOT EXISTS document_chunks (
                                                id          BIGSERIAL PRIMARY KEY,
                                                tenant_id   BIGINT NOT NULL,
+                                               business_id BIGINT NOT NULL,
                                                document_id BIGINT NOT NULL,
                                                content     TEXT NOT NULL,
                                                embedding   VECTOR(1536) NOT NULL,
@@ -169,13 +226,18 @@ CREATE TABLE IF NOT EXISTS document_chunks (
                                                chunk_hash_text TEXT GENERATED ALWAYS AS (metadata->>'chunkHash') STORED,
                                                created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                                                CONSTRAINT ux_document_chunks_idempotency
-                                                   UNIQUE (tenant_id, document_id, chunk_index_int, chunk_hash_text),
+                                                   UNIQUE (tenant_id, business_id, document_id, chunk_index_int, chunk_hash_text),
+                                               CONSTRAINT fk_document_chunks_business
+                                                   FOREIGN KEY (business_id, tenant_id) REFERENCES tenant_business(id, tenant_id) ON DELETE CASCADE,
                                                CONSTRAINT fk_document_chunks_document_validation
-                                                   FOREIGN KEY (document_id, tenant_id) REFERENCES documents(id, tenant_id) ON DELETE CASCADE
+                                                   FOREIGN KEY (document_id, business_id) REFERENCES documents(id, business_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_document_chunks_tenant
     ON document_chunks (tenant_id);
+
+CREATE INDEX IF NOT EXISTS idx_document_chunks_business
+    ON document_chunks (business_id);
 
 CREATE INDEX IF NOT EXISTS idx_document_chunks_document
     ON document_chunks (document_id);

@@ -1,0 +1,240 @@
+package com.levosoft.microservice.brain.channel.service;
+
+import com.levosoft.microservice.brain.business.model.TenantBusiness;
+import com.levosoft.microservice.brain.business.repository.TenantBusinessRepository;
+import com.levosoft.microservice.brain.channel.dto.ChannelRegistrationRequest;
+import com.levosoft.microservice.brain.channel.dto.ChannelRegistrationResponse;
+import com.levosoft.microservice.brain.channel.model.Channel;
+import com.levosoft.microservice.brain.channel.model.TenantRegisteredChannel;
+import com.levosoft.microservice.brain.channel.repository.ChannelRepository;
+import com.levosoft.microservice.brain.channel.repository.TenantRegisteredChannelRepository;
+import com.levosoft.microservice.brain.tenant.repository.TenantRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class TenantRegisteredChannelService {
+
+    private static final Boolean LINKED_STATUS_ACTIVE = true;
+    private static final Boolean LINKED_STATUS_INACTIVE = false;
+
+    private final TenantRegisteredChannelRepository tenantRegisteredChannelRepository;
+    private final ChannelRepository channelRepository;
+    private final TenantBusinessRepository tenantBusinessRepository;
+    private final TenantRepository tenantRepository;
+
+    @Transactional
+    public ChannelRegistrationResponse registerChannel(ChannelRegistrationRequest request) {
+        log.info("Start - registering channel '{}' for tenant ID: {} and business ID: {}", request.channelCode(), request.tenantId(), request.businessId());
+
+        validateTenantExists(request.tenantId());
+        validateBusinessOwnership(request.tenantId(), request.businessId());
+
+        String normalizedChannelCode = normalizeChannelCode(request.channelCode());
+        Channel channel = getChannelByCode(normalizedChannelCode);
+
+        TenantRegisteredChannel existingActiveRegistration = findActiveRegistration(
+                request.businessId(),
+                normalizedChannelCode
+        );
+
+        if (existingActiveRegistration != null) {
+            log.error("Conflict detected: active channel registration already exists for tenant ID: {}, business ID: {}, channelCode: {}",
+                    request.tenantId(), request.businessId(), normalizedChannelCode);
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Active channel registration already exists for channel code: " + normalizedChannelCode
+            );
+        }
+
+        TenantRegisteredChannel registration = new TenantRegisteredChannel();
+        registration.setBusinessId(request.businessId());
+        registration.setChannelCode(channel.getCode());
+        registration.setDisplayName(trimToNull(request.displayName()));
+        registration.setLinkedStatus(LINKED_STATUS_ACTIVE);
+
+        TenantRegisteredChannel savedRegistration = tenantRegisteredChannelRepository.save(registration);
+        log.info("End - channel registered successfully with ID: {}", savedRegistration.getId());
+
+        return mapToResponse(savedRegistration, channel.getCode());
+    }
+
+    public List<ChannelRegistrationResponse> listBusinessChannels(Long tenantId, Long businessId) {
+        log.info("Fetching registered channels for tenant ID: {} and business ID: {}", tenantId, businessId);
+
+        validateTenantExists(tenantId);
+        validateBusinessOwnership(tenantId, businessId);
+
+        return tenantRegisteredChannelRepository.findAllByBusinessIdOrderByCreatedAtDesc(businessId)
+                .stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    @Transactional
+    public ChannelRegistrationResponse linkChannel(Long tenantId, Long businessId, String channelCode) {
+        log.info("Linking channel '{}' for tenant ID: {} and business ID: {}", channelCode, tenantId, businessId);
+
+        validateTenantExists(tenantId);
+        validateBusinessOwnership(tenantId, businessId);
+
+        String normalizedChannelCode = normalizeChannelCode(channelCode);
+        Channel channel = getChannelByCode(normalizedChannelCode);
+
+        TenantRegisteredChannel activeRegistration = findActiveRegistration(businessId, normalizedChannelCode);
+        if (activeRegistration != null) {
+            log.info("Channel '{}' is already linked for tenant ID: {} and business ID: {}", normalizedChannelCode, tenantId, businessId);
+            return mapToResponse(activeRegistration, channel.getCode());
+        }
+
+        TenantRegisteredChannel registration = new TenantRegisteredChannel();
+        registration.setBusinessId(businessId);
+        registration.setChannelCode(channel.getCode());
+        registration.setLinkedStatus(LINKED_STATUS_ACTIVE);
+
+        TenantRegisteredChannel savedRegistration = tenantRegisteredChannelRepository.save(registration);
+        log.info("Channel '{}' linked successfully with registration ID: {}", normalizedChannelCode, savedRegistration.getId());
+
+        return mapToResponse(savedRegistration, channel.getCode());
+    }
+
+    @Transactional
+    public ChannelRegistrationResponse unlinkChannel(Long tenantId, Long businessId, String channelCode) {
+        log.info("Unlinking channel '{}' for tenant ID: {} and business ID: {}", channelCode, tenantId, businessId);
+
+        validateTenantExists(tenantId);
+        validateBusinessOwnership(tenantId, businessId);
+
+        String normalizedChannelCode = normalizeChannelCode(channelCode);
+        Channel channel = getChannelByCode(normalizedChannelCode);
+
+        TenantRegisteredChannel activeRegistration = findActiveRegistration(businessId, normalizedChannelCode);
+        if (activeRegistration == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Active channel registration not found for channel code: " + normalizedChannelCode
+            );
+        }
+
+        activeRegistration.setLinkedStatus(LINKED_STATUS_INACTIVE);
+
+        TenantRegisteredChannel savedRegistration = tenantRegisteredChannelRepository.save(activeRegistration);
+        log.info("Channel '{}' unlinked successfully for registration ID: {}", normalizedChannelCode, savedRegistration.getId());
+
+        return mapToResponse(savedRegistration, channel.getCode());
+    }
+
+    @Transactional
+    public ChannelRegistrationResponse replaceChannel(Long tenantId, Long businessId, String channelCode, ChannelRegistrationRequest request) {
+        log.info("Replacing channel '{}' for tenant ID: {} and business ID: {}", channelCode, tenantId, businessId);
+
+        validateTenantExists(tenantId);
+        validateBusinessOwnership(tenantId, businessId);
+
+        String normalizedChannelCode = normalizeChannelCode(channelCode);
+        Channel channel = getChannelByCode(normalizedChannelCode);
+
+        if (!tenantId.equals(request.tenantId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "tenantId in path must match tenantId in request body");
+        }
+
+        if (!businessId.equals(request.businessId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "businessId in path must match businessId in request body");
+        }
+
+        String normalizedRequestChannelCode = normalizeChannelCode(request.channelCode());
+        if (!normalizedChannelCode.equals(normalizedRequestChannelCode)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "channelCode in path must match channelCode in request body");
+        }
+
+        TenantRegisteredChannel activeRegistration = findActiveRegistration(businessId, normalizedChannelCode);
+        if (activeRegistration != null) {
+            activeRegistration.setLinkedStatus(LINKED_STATUS_INACTIVE);
+            tenantRegisteredChannelRepository.save(activeRegistration);
+        }
+
+        TenantRegisteredChannel replacement = new TenantRegisteredChannel();
+        replacement.setBusinessId(businessId);
+        replacement.setChannelCode(channel.getCode());
+        replacement.setDisplayName(trimToNull(request.displayName()));
+        replacement.setLinkedStatus(LINKED_STATUS_ACTIVE);
+
+        TenantRegisteredChannel savedReplacement = tenantRegisteredChannelRepository.save(replacement);
+        log.info("Channel '{}' replaced successfully with registration ID: {}", normalizedChannelCode, savedReplacement.getId());
+
+        return mapToResponse(savedReplacement, channel.getCode());
+    }
+
+    private void validateTenantExists(Long tenantId) {
+        if (!tenantRepository.existsById(tenantId)) {
+            log.error("Tenant not found for ID: {}", tenantId);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found with ID: " + tenantId);
+        }
+    }
+
+    private void validateBusinessOwnership(Long tenantId, Long businessId) {
+        TenantBusiness business = tenantBusinessRepository.findByIdAndTenantId(businessId, tenantId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Business not found with ID: " + businessId + " for tenant ID: " + tenantId
+                ));
+        log.debug("Validated business ownership for business ID: {} under tenant ID: {}", business.getId(), tenantId);
+    }
+
+    private String normalizeChannelCode(String channelCode) {
+        if (channelCode == null || channelCode.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "channelCode is required");
+        }
+        return channelCode.trim().toLowerCase();
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
+    private Channel getChannelByCode(String channelCode) {
+        return channelRepository.findById(channelCode)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Channel not found with code: " + channelCode));
+    }
+
+    private TenantRegisteredChannel findActiveRegistration(Long businessId, String channelCode) {
+        return tenantRegisteredChannelRepository
+                .findFirstByBusinessIdAndChannelCodeAndLinkedStatusOrderByCreatedAtDesc(
+                        businessId,
+                        channelCode,
+                        LINKED_STATUS_ACTIVE
+                )
+                .orElse(null);
+    }
+
+    private ChannelRegistrationResponse mapToResponse(TenantRegisteredChannel registration) {
+        Channel channel = channelRepository.findById(registration.getChannelCode())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Channel not found with code: " + registration.getChannelCode()));
+        return mapToResponse(registration, channel.getCode());
+    }
+
+    private ChannelRegistrationResponse mapToResponse(TenantRegisteredChannel registration, String channelName) {
+        return new ChannelRegistrationResponse(
+                registration.getId(),
+                registration.getBusinessId(),
+                registration.getChannelCode(),
+                channelName,
+                registration.getDisplayName(),
+                registration.getLinkedStatus(),
+                registration.getCreatedAt(),
+                registration.getUpdatedAt()
+        );
+    }
+}
