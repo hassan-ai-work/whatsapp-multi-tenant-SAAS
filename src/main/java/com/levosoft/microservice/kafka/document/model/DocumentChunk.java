@@ -20,8 +20,8 @@ import java.util.Map;
 @Getter
 @Setter
 @SQLInsert(sql = """
-        INSERT INTO document_chunks (business_id, content, created_at, document_id, embedding, metadata, tenant_id)
-        VALUES (?, ?, ?, ?, CAST(? AS vector), CAST(? AS jsonb), ?)
+        INSERT INTO document_chunks (content, created_at, document_id, embedding, metadata, tenant_id, business_id)
+        VALUES (?, ?, ?, CAST(? AS vector), CAST(? AS jsonb), ?, ?)
         """)
 public class DocumentChunk {
 

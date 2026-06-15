@@ -91,6 +91,8 @@ CREATE TABLE IF NOT EXISTS tenant_business (
                                      business_name      TEXT NOT NULL,
                                      description        TEXT,
                                      registered_number  TEXT NOT NULL UNIQUE,
+                                     active             SMALLINT NOT NULL DEFAULT 1,
+                                     approved           SMALLINT NOT NULL DEFAULT 0,
                                      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                                      updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                                      CONSTRAINT fk_tenant_business_tenant
@@ -129,6 +131,8 @@ CREATE TABLE IF NOT EXISTS tenant_registered_channels (
                                      channel_code    TEXT NOT NULL,
                                      display_name    TEXT NOT NULL,
                                      linked_status   BOOLEAN NOT NULL DEFAULT FALSE,
+                                     active             SMALLINT NOT NULL DEFAULT 1,
+                                     approved           SMALLINT NOT NULL DEFAULT 0,
                                      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                                      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                                      CONSTRAINT fk_tenant_registered_channels_business

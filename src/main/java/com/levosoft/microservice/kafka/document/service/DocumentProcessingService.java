@@ -31,7 +31,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -63,9 +62,15 @@ public class DocumentProcessingService {
 
     // Use lightweight Java 21 Virtual Threads for non-blocking concurrent requests
     private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+
     @KafkaListener(topics = "${app.kafka.topics.document-ingestion}", groupId = "${spring.kafka.consumer.group-id}")
     public void consume(DocumentIngestionEvent event) {
-        log.info("Received document ingestion event. documentId={}, tenantId={}", event.documentId(), event.tenantId());
+        log.info(
+                "Received document ingestion event. documentId={}, tenantId={}, businessId={}",
+                event.documentId(),
+                event.tenantId(),
+                event.businessId()
+        );
         try {
             process(event);
         } catch (Exception ex) {
@@ -101,7 +106,7 @@ public class DocumentProcessingService {
                             } catch (Exception e) {
                                 throw new RuntimeException("Embedding failure at index: " + chunkIndex, e);
                             }
-                        }, virtualThreadExecutor) // Dispatched onto virtual tasks
+                        }, virtualThreadExecutor)
                         .thenAccept(embedding -> {
                             Map<String, Object> metadata = new LinkedHashMap<>();
                             metadata.put("chunkIndex", chunkIndex);
@@ -118,7 +123,14 @@ public class DocumentProcessingService {
                             documentChunk.setMetadata(metadata);
                             documentChunk.setCreatedAt(OffsetDateTime.now());
 
-                            saveChunkIdempotently(documentChunk, event.documentId(), event.tenantId(), chunkIndex, chunkHash);
+                            saveChunkIdempotently(
+                                    documentChunk,
+                                    event.documentId(),
+                                    event.tenantId(),
+                                    event.businessId(),
+                                    chunkIndex,
+                                    chunkHash
+                            );
                         });
 
                 parallelTasks.add(task);
@@ -129,7 +141,13 @@ public class DocumentProcessingService {
                     .get(EMBEDDING_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
 
             markDocumentProcessed(document, processingStartedAt);
-            log.info("Document processing completed. documentId={}, chunkCount={}", event.documentId(), chunks.size());
+            log.info(
+                    "Document processing completed. documentId={}, tenantId={}, businessId={}, chunkCount={}",
+                    event.documentId(),
+                    event.tenantId(),
+                    event.businessId(),
+                    chunks.size()
+            );
         } catch (Exception ex) {
             markDocumentFailed(event.documentId(), ex.getMessage());
             throw ex;
@@ -137,12 +155,26 @@ public class DocumentProcessingService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void saveChunkIdempotently(DocumentChunk documentChunk, Long documentId, Long tenantId, int chunkIndex, String chunkHash) {
+    public void saveChunkIdempotently(
+            DocumentChunk documentChunk,
+            Long documentId,
+            Long tenantId,
+            Long businessId,
+            int chunkIndex,
+            String chunkHash
+    ) {
         try {
             documentChunkRepository.saveAndFlush(documentChunk);
         } catch (DataIntegrityViolationException ex) {
             if (isIdempotentDuplicate(ex)) {
-                log.info("Duplicate chunk ignored during Kafka redelivery. documentId={}, chunkIndex={}", documentId, chunkIndex);
+                log.info(
+                        "Duplicate chunk ignored during Kafka redelivery. documentId={}, tenantId={}, businessId={}, chunkIndex={}, chunkHash={}",
+                        documentId,
+                        tenantId,
+                        businessId,
+                        chunkIndex,
+                        chunkHash
+                );
                 return;
             }
             throw ex;
@@ -202,6 +234,7 @@ public class DocumentProcessingService {
                     return candidates.getFirst();
                 });
     }
+
     private List<Double> normalizeEmbeddingDimensions(List<Double> rawEmbedding) {
         if (rawEmbedding.size() == EMBEDDING_DIMENSION) {
             return rawEmbedding;
@@ -289,7 +322,9 @@ public class DocumentProcessingService {
         Map<String, Object> ingestion = new LinkedHashMap<>();
         Object existingIngestion = metadata.get("ingestion");
         if (existingIngestion instanceof Map<?, ?> existingIngestionMap) {
-            existingIngestionMap.forEach((k, v) -> { if (k instanceof String) ingestion.put((String) k, v); });
+            existingIngestionMap.forEach((k, v) -> {
+                if (k instanceof String) ingestion.put((String) k, v);
+            });
         }
 
         ingestion.put("status", ingestionStatus);
@@ -336,7 +371,9 @@ public class DocumentProcessingService {
         Map<String, Object> ingestion = new LinkedHashMap<>();
         Object existingIngestion = metadata.get("ingestion");
         if (existingIngestion instanceof Map<?, ?> existingIngestionMap) {
-            existingIngestionMap.forEach((k, v) -> { if (k instanceof String) ingestion.put((String) k, v); });
+            existingIngestionMap.forEach((k, v) -> {
+                if (k instanceof String) ingestion.put((String) k, v);
+            });
         }
 
         ingestion.put("status", "PROCESSED");
@@ -359,7 +396,9 @@ public class DocumentProcessingService {
             Map<String, Object> ingestion = new LinkedHashMap<>();
             Object existingIngestion = metadata.get("ingestion");
             if (existingIngestion instanceof Map<?, ?> existingIngestionMap) {
-                existingIngestionMap.forEach((k, v) -> { if (k instanceof String) ingestion.put((String) k, v); });
+                existingIngestionMap.forEach((k, v) -> {
+                    if (k instanceof String) ingestion.put((String) k, v);
+                });
             }
 
             ingestion.put("status", "FAILED");
@@ -368,7 +407,9 @@ public class DocumentProcessingService {
             Map<String, Object> extraction = new LinkedHashMap<>();
             Object existingExtraction = ingestion.get("extraction");
             if (existingExtraction instanceof Map<?, ?> existingExtractionMap) {
-                existingExtractionMap.forEach((k, v) -> { if (k instanceof String) extraction.put((String) k, v); });
+                existingExtractionMap.forEach((k, v) -> {
+                    if (k instanceof String) extraction.put((String) k, v);
+                });
             }
             extraction.put("status", "FAILED");
             if (failureReason != null && !failureReason.isBlank()) extraction.put("failureReason", failureReason);

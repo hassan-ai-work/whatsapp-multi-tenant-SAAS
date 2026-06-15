@@ -6,6 +6,7 @@ import java.util.UUID;
 public record DocumentIngestionEvent(
         Long documentId,
         Long tenantId,
+        Long businessId,
         String title,
         String source,
         String s3Key,

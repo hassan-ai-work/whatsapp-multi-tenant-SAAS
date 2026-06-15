@@ -1,0 +1,20 @@
+# This root docker-compose.yaml combines infrastructure services
+# for the current microservices project without modifying
+# individual service docker-compose files.
+#
+# It uses the "include" feature (Docker Compose 2.20+) to aggregate
+# service-specific Docker Compose definitions.
+#
+# Usage:
+#   Start infrastructure: docker compose up -d
+#   Stop infrastructure:  docker compose down
+#   Check status:         docker compose ps
+
+include:
+  - api-gateway/docker-compose.yaml
+  - kafka-service/docker-compose.yaml
+  - whatsapp-brain-service/docker-compose.yaml
+
+networks:
+  default:
+    name: microservices-network
