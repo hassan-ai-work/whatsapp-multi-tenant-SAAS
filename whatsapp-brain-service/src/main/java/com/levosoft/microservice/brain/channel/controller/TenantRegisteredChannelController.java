@@ -30,13 +30,11 @@ public class TenantRegisteredChannelController {
     public ChannelRegistrationResponse registerChannel(
             @PathVariable Long tenantId,
             @PathVariable Long businessId,
+            @RequestHeader("X-Authenticated-User") String authenticatedUser,
             @Valid @RequestBody ChannelRegistrationRequest request
     ) {
         log.info("API triggered channel registration route for tenant ID: {} and business ID: {}", tenantId, businessId);
-
-        validatePathMatchesBody(tenantId, businessId, request);
-
-        return tenantRegisteredChannelService.registerChannel(request);
+        return tenantRegisteredChannelService.registerChannel(authenticatedUser, tenantId, businessId, request);
     }
 
     @GetMapping
@@ -44,10 +42,11 @@ public class TenantRegisteredChannelController {
     @Operation(summary = "List business channel registrations", description = "Retrieves all channel registration history for a tenant business.")
     public List<ChannelRegistrationResponse> listBusinessChannels(
             @PathVariable Long tenantId,
-            @PathVariable Long businessId
+            @PathVariable Long businessId,
+            @RequestHeader("X-Authenticated-User") String authenticatedUser
     ) {
         log.info("Fetching channel registration list for tenant ID: {} and business ID: {}", tenantId, businessId);
-        return tenantRegisteredChannelService.listBusinessChannels(tenantId, businessId);
+        return tenantRegisteredChannelService.listBusinessChannels(authenticatedUser, tenantId, businessId);
     }
 
     @PatchMapping("/{channelCode}/link")
@@ -56,10 +55,11 @@ public class TenantRegisteredChannelController {
     public ChannelRegistrationResponse linkChannel(
             @PathVariable Long tenantId,
             @PathVariable Long businessId,
-            @PathVariable String channelCode
+            @PathVariable String channelCode,
+            @RequestHeader("X-Authenticated-User") String authenticatedUser
     ) {
         log.info("Linking channel '{}' for tenant ID: {} and business ID: {}", channelCode, tenantId, businessId);
-        return tenantRegisteredChannelService.linkChannel(tenantId, businessId, channelCode);
+        return tenantRegisteredChannelService.linkChannel(authenticatedUser, tenantId, businessId, channelCode);
     }
 
     @PatchMapping("/{channelCode}/unlink")
@@ -68,10 +68,11 @@ public class TenantRegisteredChannelController {
     public ChannelRegistrationResponse unlinkChannel(
             @PathVariable Long tenantId,
             @PathVariable Long businessId,
-            @PathVariable String channelCode
+            @PathVariable String channelCode,
+            @RequestHeader("X-Authenticated-User") String authenticatedUser
     ) {
         log.info("Unlinking channel '{}' for tenant ID: {} and business ID: {}", channelCode, tenantId, businessId);
-        return tenantRegisteredChannelService.unlinkChannel(tenantId, businessId, channelCode);
+        return tenantRegisteredChannelService.unlinkChannel(authenticatedUser, tenantId, businessId, channelCode);
     }
 
     @PostMapping("/{channelCode}/replace")
@@ -81,26 +82,15 @@ public class TenantRegisteredChannelController {
             @PathVariable Long tenantId,
             @PathVariable Long businessId,
             @PathVariable String channelCode,
+            @RequestHeader("X-Authenticated-User") String authenticatedUser,
             @Valid @RequestBody ChannelRegistrationRequest request
     ) {
         log.info("Replacing channel '{}' for tenant ID: {} and business ID: {}", channelCode, tenantId, businessId);
-
-        validatePathMatchesBody(tenantId, businessId, request);
 
         if (!channelCode.equalsIgnoreCase(request.channelCode())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "channelCode in path must match channelCode in request body");
         }
 
-        return tenantRegisteredChannelService.replaceChannel(tenantId, businessId, channelCode, request);
-    }
-
-    private void validatePathMatchesBody(Long tenantId, Long businessId, ChannelRegistrationRequest request) {
-        if (!tenantId.equals(request.tenantId())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "tenantId in path must match tenantId in request body");
-        }
-
-        if (!businessId.equals(request.businessId())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "businessId in path must match businessId in request body");
-        }
+        return tenantRegisteredChannelService.replaceChannel(authenticatedUser, tenantId, businessId, channelCode, request);
     }
 }

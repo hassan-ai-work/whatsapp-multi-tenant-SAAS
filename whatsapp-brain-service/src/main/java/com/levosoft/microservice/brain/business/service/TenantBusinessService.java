@@ -23,13 +23,10 @@ public class TenantBusinessService {
     private final TenantRepository tenantRepository;
 
     @Transactional
-    public TenantBusinessResponse createBusiness(TenantBusinessRequest businessRequest) {
-        log.info("Start - validating and creating business for tenant ID: {}", businessRequest.tenantId());
+    public TenantBusinessResponse createBusiness(String username, TenantBusinessRequest businessRequest) {
+        Long resolvedTenantId = resolveTenantId(username);
 
-        if (!tenantRepository.existsById(businessRequest.tenantId())) {
-            log.error("Tenant not found for ID: {}", businessRequest.tenantId());
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found with ID: " + businessRequest.tenantId());
-        }
+        log.info("Start - validating and creating business for tenant ID: {}", resolvedTenantId);
 
         if (tenantBusinessRepository.existsByRegisteredNumber(businessRequest.registeredNumber())) {
             log.error("Conflict detected: Business registered number '{}' is already registered", businessRequest.registeredNumber());
@@ -37,7 +34,7 @@ public class TenantBusinessService {
         }
 
         TenantBusiness tenantBusiness = new TenantBusiness();
-        tenantBusiness.setTenantId(businessRequest.tenantId());
+        tenantBusiness.setTenantId(resolvedTenantId);
         tenantBusiness.setBusinessName(businessRequest.businessName());
         tenantBusiness.setDescription(businessRequest.description());
         tenantBusiness.setRegisteredNumber(businessRequest.registeredNumber());
@@ -48,38 +45,34 @@ public class TenantBusinessService {
         return mapToResponse(savedBusiness);
     }
 
-    public TenantBusinessResponse getBusinessById(Long tenantId, Long businessId) {
-        log.info("Searching for business ID: {} under tenant ID: {}", businessId, tenantId);
-        TenantBusiness tenantBusiness = tenantBusinessRepository.findByIdAndTenantId(businessId, tenantId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business not found with ID: " + businessId + " for tenant ID: " + tenantId));
+    public TenantBusinessResponse getBusinessById(String username, Long businessId) {
+        Long resolvedTenantId = resolveTenantId(username);
+
+        log.info("Searching for business ID: {} under tenant ID: {}", businessId, resolvedTenantId);
+        TenantBusiness tenantBusiness = tenantBusinessRepository.findByIdAndTenantId(businessId, resolvedTenantId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business not found with ID: " + businessId + " for tenant ID: " + resolvedTenantId));
         return mapToResponse(tenantBusiness);
     }
 
-    public List<TenantBusinessResponse> listBusinessesByTenantId(Long tenantId) {
-        log.info("Fetching all businesses for tenant ID: {}", tenantId);
+    public List<TenantBusinessResponse> listBusinessesByTenantId(String username) {
+        Long resolvedTenantId = resolveTenantId(username);
 
-        if (!tenantRepository.existsById(tenantId)) {
-            log.error("Tenant not found for ID: {}", tenantId);
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found with ID: " + tenantId);
-        }
+        log.info("Fetching all businesses for tenant ID: {}", resolvedTenantId);
 
-        return tenantBusinessRepository.findAllByTenantId(tenantId)
+        return tenantBusinessRepository.findAllByTenantId(resolvedTenantId)
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
     }
 
     @Transactional
-    public TenantBusinessResponse updateBusiness(Long tenantId, Long businessId, TenantBusinessRequest businessRequest) {
-        log.info("Start - updating business ID: {} for tenant ID: {}", businessId, tenantId);
+    public TenantBusinessResponse updateBusiness(String username, Long businessId, TenantBusinessRequest businessRequest) {
+        Long resolvedTenantId = resolveTenantId(username);
 
-        if (!tenantId.equals(businessRequest.tenantId())) {
-            log.error("Ownership mismatch detected for tenant ID path: {} and payload tenant ID: {}", tenantId, businessRequest.tenantId());
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "tenantId in path must match tenantId in request body");
-        }
+        log.info("Start - updating business ID: {} for tenant ID: {}", businessId, resolvedTenantId);
 
-        TenantBusiness tenantBusiness = tenantBusinessRepository.findByIdAndTenantId(businessId, tenantId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business not found with ID: " + businessId + " for tenant ID: " + tenantId));
+        TenantBusiness tenantBusiness = tenantBusinessRepository.findByIdAndTenantId(businessId, resolvedTenantId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business not found with ID: " + businessId + " for tenant ID: " + resolvedTenantId));
 
         if (!tenantBusiness.getRegisteredNumber().equalsIgnoreCase(businessRequest.registeredNumber())
                 && tenantBusinessRepository.existsByRegisteredNumber(businessRequest.registeredNumber())) {
@@ -87,7 +80,6 @@ public class TenantBusinessService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Business registered number already exists");
         }
 
-        tenantBusiness.setTenantId(businessRequest.tenantId());
         tenantBusiness.setBusinessName(businessRequest.businessName());
         tenantBusiness.setDescription(businessRequest.description());
         tenantBusiness.setRegisteredNumber(businessRequest.registeredNumber());
@@ -99,14 +91,28 @@ public class TenantBusinessService {
     }
 
     @Transactional
-    public void deleteBusiness(Long tenantId, Long businessId) {
-        log.info("Attempting hard-delete database purge for business ID: {} under tenant ID: {}", businessId, tenantId);
+    public void deleteBusiness(String username, Long businessId) {
+        Long resolvedTenantId = resolveTenantId(username);
 
-        TenantBusiness tenantBusiness = tenantBusinessRepository.findByIdAndTenantId(businessId, tenantId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business not found with ID: " + businessId + " for tenant ID: " + tenantId));
+        log.info("Attempting hard-delete database purge for business ID: {} under tenant ID: {}", businessId, resolvedTenantId);
+
+        TenantBusiness tenantBusiness = tenantBusinessRepository.findByIdAndTenantId(businessId, resolvedTenantId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business not found with ID: " + businessId + " for tenant ID: " + resolvedTenantId));
 
         tenantBusinessRepository.deleteById(tenantBusiness.getId());
         log.info("Successfully dropped database metadata row for business ID: {}", businessId);
+    }
+
+    private Long resolveTenantId(String authenticatedUsername) {
+        if (authenticatedUsername == null || authenticatedUsername.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing or blank X-Authenticated-User header");
+        }
+
+        String normalizedUsername = authenticatedUsername.trim().toLowerCase();
+
+        return tenantRepository.findByUsername(normalizedUsername)
+                .map(tenant -> tenant.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found for authenticated user: " + normalizedUsername));
     }
 
     private TenantBusinessResponse mapToResponse(TenantBusiness tenantBusiness) {

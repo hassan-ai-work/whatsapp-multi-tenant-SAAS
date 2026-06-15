@@ -27,16 +27,18 @@ public class ContactMemoryService {
     private final TenantBusinessRepository tenantBusinessRepository;
 
     @Transactional
-    public ContactMemoryResponse createMemory(ContactMemoryRequest request) {
-        log.info("Start - creating contact memory for tenant ID: {}, business ID: {}, contactIdentifier: {}",
-                request.tenantId(), request.businessId(), request.contactIdentifier());
+    public ContactMemoryResponse createMemory(String authenticatedUsername, Long tenantId, Long businessId, ContactMemoryRequest request) {
+        Long resolvedTenantId = resolveTenantId(authenticatedUsername);
+        validateTenantAccess(tenantId, resolvedTenantId);
 
-        validateTenantExists(request.tenantId());
-        validateBusinessOwnership(request.tenantId(), request.businessId());
+        log.info("Start - creating contact memory for tenant ID: {}, business ID: {}, contactIdentifier: {}",
+                resolvedTenantId, businessId, request.contactIdentifier());
+
+        validateBusinessOwnership(resolvedTenantId, businessId);
 
         return contactMemoryRepository.findByTenantIdAndBusinessIdAndIdempotencyHash(
-                        request.tenantId(),
-                        request.businessId(),
+                        resolvedTenantId,
+                        businessId,
                         request.idempotencyHash()
                 )
                 .map(existing -> {
@@ -45,8 +47,8 @@ public class ContactMemoryService {
                 })
                 .orElseGet(() -> {
                     ContactMemory memory = new ContactMemory();
-                    memory.setTenantId(request.tenantId());
-                    memory.setBusinessId(request.businessId());
+                    memory.setTenantId(resolvedTenantId);
+                    memory.setBusinessId(businessId);
                     memory.setContactIdentifier(request.contactIdentifier().trim());
                     memory.setContactChatText(request.contactChatText().trim());
                     memory.setEmbedding(toPgVector(request.embedding()));
@@ -58,34 +60,50 @@ public class ContactMemoryService {
                 });
     }
 
-    public ContactMemoryResponse getMemoryById(Long tenantId, Long businessId, Long memoryId) {
-        log.info("Fetching contact memory ID: {} for tenant ID: {} and business ID: {}", memoryId, tenantId, businessId);
+    public ContactMemoryResponse getMemoryById(String authenticatedUsername, Long tenantId, Long businessId, Long memoryId) {
+        Long resolvedTenantId = resolveTenantId(authenticatedUsername);
+        validateTenantAccess(tenantId, resolvedTenantId);
 
-        validateTenantExists(tenantId);
-        validateBusinessOwnership(tenantId, businessId);
+        log.info("Fetching contact memory ID: {} for tenant ID: {} and business ID: {}", memoryId, resolvedTenantId, businessId);
 
-        ContactMemory memory = contactMemoryRepository.findByIdAndTenantIdAndBusinessId(memoryId, tenantId, businessId)
+        validateBusinessOwnership(resolvedTenantId, businessId);
+
+        ContactMemory memory = contactMemoryRepository.findByIdAndTenantIdAndBusinessId(memoryId, resolvedTenantId, businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Contact memory not found with ID: " + memoryId));
 
         return mapToResponse(memory);
     }
 
-    public List<ContactMemoryResponse> listMemories(Long tenantId, Long businessId) {
-        log.info("Listing contact memories for tenant ID: {} and business ID: {}", tenantId, businessId);
+    public List<ContactMemoryResponse> listMemories(String authenticatedUsername, Long tenantId, Long businessId) {
+        Long resolvedTenantId = resolveTenantId(authenticatedUsername);
+        validateTenantAccess(tenantId, resolvedTenantId);
 
-        validateTenantExists(tenantId);
-        validateBusinessOwnership(tenantId, businessId);
+        log.info("Listing contact memories for tenant ID: {} and business ID: {}", resolvedTenantId, businessId);
 
-        return contactMemoryRepository.findAllByTenantIdAndBusinessIdOrderByCreatedAtDesc(tenantId, businessId)
+        validateBusinessOwnership(resolvedTenantId, businessId);
+
+        return contactMemoryRepository.findAllByTenantIdAndBusinessIdOrderByCreatedAtDesc(resolvedTenantId, businessId)
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
     }
 
-    private void validateTenantExists(Long tenantId) {
-        if (!tenantRepository.existsById(tenantId)) {
-            log.error("Tenant not found for ID: {}", tenantId);
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found with ID: " + tenantId);
+    private Long resolveTenantId(String authenticatedUsername) {
+        if (authenticatedUsername == null || authenticatedUsername.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing or blank X-Authenticated-User header");
+        }
+
+        String normalizedUsername = authenticatedUsername.trim().toLowerCase();
+
+        return tenantRepository.findByUsername(normalizedUsername)
+                .map(tenant -> tenant.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found for authenticated user: " + normalizedUsername));
+    }
+
+    private void validateTenantAccess(Long pathTenantId, Long resolvedTenantId) {
+        if (!resolvedTenantId.equals(pathTenantId)) {
+            log.error("Forbidden tenant access attempt. Path tenant ID: {}, authenticated tenant ID: {}", pathTenantId, resolvedTenantId);
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not allowed to access resources for this tenant");
         }
     }
 

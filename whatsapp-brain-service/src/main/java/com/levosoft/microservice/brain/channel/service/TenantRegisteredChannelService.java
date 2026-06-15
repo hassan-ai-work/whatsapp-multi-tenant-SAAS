@@ -32,23 +32,25 @@ public class TenantRegisteredChannelService {
     private final TenantRepository tenantRepository;
 
     @Transactional
-    public ChannelRegistrationResponse registerChannel(ChannelRegistrationRequest request) {
-        log.info("Start - registering channel '{}' for tenant ID: {} and business ID: {}", request.channelCode(), request.tenantId(), request.businessId());
+    public ChannelRegistrationResponse registerChannel(String authenticatedUsername, Long tenantId, Long businessId, ChannelRegistrationRequest request) {
+        Long resolvedTenantId = resolveTenantId(authenticatedUsername);
+        validateTenantAccess(tenantId, resolvedTenantId);
 
-        validateTenantExists(request.tenantId());
-        validateBusinessOwnership(request.tenantId(), request.businessId());
+        log.info("Start - registering channel '{}' for tenant ID: {} and business ID: {}", request.channelCode(), resolvedTenantId, businessId);
+
+        validateBusinessOwnership(resolvedTenantId, businessId);
 
         String normalizedChannelCode = normalizeChannelCode(request.channelCode());
         Channel channel = getChannelByCode(normalizedChannelCode);
 
         TenantRegisteredChannel existingActiveRegistration = findActiveRegistration(
-                request.businessId(),
+                businessId,
                 normalizedChannelCode
         );
 
         if (existingActiveRegistration != null) {
             log.error("Conflict detected: active channel registration already exists for tenant ID: {}, business ID: {}, channelCode: {}",
-                    request.tenantId(), request.businessId(), normalizedChannelCode);
+                    resolvedTenantId, businessId, normalizedChannelCode);
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "Active channel registration already exists for channel code: " + normalizedChannelCode
@@ -56,7 +58,7 @@ public class TenantRegisteredChannelService {
         }
 
         TenantRegisteredChannel registration = new TenantRegisteredChannel();
-        registration.setBusinessId(request.businessId());
+        registration.setBusinessId(businessId);
         registration.setChannelCode(channel.getCode());
         registration.setDisplayName(trimToNull(request.displayName()));
         registration.setLinkedStatus(LINKED_STATUS_ACTIVE);
@@ -67,11 +69,13 @@ public class TenantRegisteredChannelService {
         return mapToResponse(savedRegistration, channel.getCode());
     }
 
-    public List<ChannelRegistrationResponse> listBusinessChannels(Long tenantId, Long businessId) {
-        log.info("Fetching registered channels for tenant ID: {} and business ID: {}", tenantId, businessId);
+    public List<ChannelRegistrationResponse> listBusinessChannels(String authenticatedUsername, Long tenantId, Long businessId) {
+        Long resolvedTenantId = resolveTenantId(authenticatedUsername);
+        validateTenantAccess(tenantId, resolvedTenantId);
 
-        validateTenantExists(tenantId);
-        validateBusinessOwnership(tenantId, businessId);
+        log.info("Fetching registered channels for tenant ID: {} and business ID: {}", resolvedTenantId, businessId);
+
+        validateBusinessOwnership(resolvedTenantId, businessId);
 
         return tenantRegisteredChannelRepository.findAllByBusinessIdOrderByCreatedAtDesc(businessId)
                 .stream()
@@ -80,24 +84,27 @@ public class TenantRegisteredChannelService {
     }
 
     @Transactional
-    public ChannelRegistrationResponse linkChannel(Long tenantId, Long businessId, String channelCode) {
-        log.info("Linking channel '{}' for tenant ID: {} and business ID: {}", channelCode, tenantId, businessId);
+    public ChannelRegistrationResponse linkChannel(String authenticatedUsername, Long tenantId, Long businessId, String channelCode) {
+        Long resolvedTenantId = resolveTenantId(authenticatedUsername);
+        validateTenantAccess(tenantId, resolvedTenantId);
 
-        validateTenantExists(tenantId);
-        validateBusinessOwnership(tenantId, businessId);
+        log.info("Linking channel '{}' for tenant ID: {} and business ID: {}", channelCode, resolvedTenantId, businessId);
+
+        validateBusinessOwnership(resolvedTenantId, businessId);
 
         String normalizedChannelCode = normalizeChannelCode(channelCode);
         Channel channel = getChannelByCode(normalizedChannelCode);
 
         TenantRegisteredChannel activeRegistration = findActiveRegistration(businessId, normalizedChannelCode);
         if (activeRegistration != null) {
-            log.info("Channel '{}' is already linked for tenant ID: {} and business ID: {}", normalizedChannelCode, tenantId, businessId);
+            log.info("Channel '{}' is already linked for tenant ID: {} and business ID: {}", normalizedChannelCode, resolvedTenantId, businessId);
             return mapToResponse(activeRegistration, channel.getCode());
         }
 
         TenantRegisteredChannel registration = new TenantRegisteredChannel();
         registration.setBusinessId(businessId);
         registration.setChannelCode(channel.getCode());
+        registration.setDisplayName(channel.getCode());
         registration.setLinkedStatus(LINKED_STATUS_ACTIVE);
 
         TenantRegisteredChannel savedRegistration = tenantRegisteredChannelRepository.save(registration);
@@ -107,11 +114,13 @@ public class TenantRegisteredChannelService {
     }
 
     @Transactional
-    public ChannelRegistrationResponse unlinkChannel(Long tenantId, Long businessId, String channelCode) {
-        log.info("Unlinking channel '{}' for tenant ID: {} and business ID: {}", channelCode, tenantId, businessId);
+    public ChannelRegistrationResponse unlinkChannel(String authenticatedUsername, Long tenantId, Long businessId, String channelCode) {
+        Long resolvedTenantId = resolveTenantId(authenticatedUsername);
+        validateTenantAccess(tenantId, resolvedTenantId);
 
-        validateTenantExists(tenantId);
-        validateBusinessOwnership(tenantId, businessId);
+        log.info("Unlinking channel '{}' for tenant ID: {} and business ID: {}", channelCode, resolvedTenantId, businessId);
+
+        validateBusinessOwnership(resolvedTenantId, businessId);
 
         String normalizedChannelCode = normalizeChannelCode(channelCode);
         Channel channel = getChannelByCode(normalizedChannelCode);
@@ -133,22 +142,16 @@ public class TenantRegisteredChannelService {
     }
 
     @Transactional
-    public ChannelRegistrationResponse replaceChannel(Long tenantId, Long businessId, String channelCode, ChannelRegistrationRequest request) {
-        log.info("Replacing channel '{}' for tenant ID: {} and business ID: {}", channelCode, tenantId, businessId);
+    public ChannelRegistrationResponse replaceChannel(String authenticatedUsername, Long tenantId, Long businessId, String channelCode, ChannelRegistrationRequest request) {
+        Long resolvedTenantId = resolveTenantId(authenticatedUsername);
+        validateTenantAccess(tenantId, resolvedTenantId);
 
-        validateTenantExists(tenantId);
-        validateBusinessOwnership(tenantId, businessId);
+        log.info("Replacing channel '{}' for tenant ID: {} and business ID: {}", channelCode, resolvedTenantId, businessId);
+
+        validateBusinessOwnership(resolvedTenantId, businessId);
 
         String normalizedChannelCode = normalizeChannelCode(channelCode);
         Channel channel = getChannelByCode(normalizedChannelCode);
-
-        if (!tenantId.equals(request.tenantId())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "tenantId in path must match tenantId in request body");
-        }
-
-        if (!businessId.equals(request.businessId())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "businessId in path must match businessId in request body");
-        }
 
         String normalizedRequestChannelCode = normalizeChannelCode(request.channelCode());
         if (!normalizedChannelCode.equals(normalizedRequestChannelCode)) {
@@ -173,10 +176,22 @@ public class TenantRegisteredChannelService {
         return mapToResponse(savedReplacement, channel.getCode());
     }
 
-    private void validateTenantExists(Long tenantId) {
-        if (!tenantRepository.existsById(tenantId)) {
-            log.error("Tenant not found for ID: {}", tenantId);
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found with ID: " + tenantId);
+    private Long resolveTenantId(String authenticatedUsername) {
+        if (authenticatedUsername == null || authenticatedUsername.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing or blank X-Authenticated-User header");
+        }
+
+        String normalizedUsername = authenticatedUsername.trim().toLowerCase();
+
+        return tenantRepository.findByUsername(normalizedUsername)
+                .map(tenant -> tenant.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found for authenticated user: " + normalizedUsername));
+    }
+
+    private void validateTenantAccess(Long pathTenantId, Long resolvedTenantId) {
+        if (!resolvedTenantId.equals(pathTenantId)) {
+            log.error("Forbidden tenant access attempt. Path tenant ID: {}, authenticated tenant ID: {}", pathTenantId, resolvedTenantId);
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not allowed to access resources for this tenant");
         }
     }
 

@@ -8,14 +8,6 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 
 public record ContactMemoryRequest(
-        @NotNull(message = "tenantId is required")
-        @Schema(description = "Owning tenant identifier", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
-        Long tenantId,
-
-        @NotNull(message = "businessId is required")
-        @Schema(description = "Owning business identifier", example = "10", requiredMode = Schema.RequiredMode.REQUIRED)
-        Long businessId,
-
         @NotBlank(message = "contactIdentifier is required")
         @Size(min = 2, max = 255, message = "contactIdentifier must be between 2 and 255 characters")
         @Schema(description = "User phone number or chat identity", example = "15551234567", requiredMode = Schema.RequiredMode.REQUIRED)

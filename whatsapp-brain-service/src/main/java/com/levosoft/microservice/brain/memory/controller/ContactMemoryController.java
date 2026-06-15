@@ -10,7 +10,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -30,19 +29,11 @@ public class ContactMemoryController {
     public ContactMemoryResponse createMemory(
             @PathVariable Long tenantId,
             @PathVariable Long businessId,
+            @RequestHeader("X-Authenticated-User") String authenticatedUser,
             @Valid @RequestBody ContactMemoryRequest request
     ) {
         log.info("API triggered contact memory creation for tenant ID: {} and business ID: {}", tenantId, businessId);
-
-        if (!tenantId.equals(request.tenantId())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "tenantId in path must match tenantId in request body");
-        }
-
-        if (!businessId.equals(request.businessId())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "businessId in path must match businessId in request body");
-        }
-
-        return contactMemoryService.createMemory(request);
+        return contactMemoryService.createMemory(authenticatedUser, tenantId, businessId, request);
     }
 
     @GetMapping("/{memoryId}")
@@ -51,10 +42,11 @@ public class ContactMemoryController {
     public ContactMemoryResponse getMemoryById(
             @PathVariable Long tenantId,
             @PathVariable Long businessId,
-            @PathVariable Long memoryId
+            @PathVariable Long memoryId,
+            @RequestHeader("X-Authenticated-User") String authenticatedUser
     ) {
         log.info("Fetching contact memory details for memory ID: {}, tenant ID: {}, business ID: {}", memoryId, tenantId, businessId);
-        return contactMemoryService.getMemoryById(tenantId, businessId, memoryId);
+        return contactMemoryService.getMemoryById(authenticatedUser, tenantId, businessId, memoryId);
     }
 
     @GetMapping
@@ -62,9 +54,10 @@ public class ContactMemoryController {
     @Operation(summary = "List contact memories", description = "Retrieves all contact memories for a tenant business.")
     public List<ContactMemoryResponse> listMemories(
             @PathVariable Long tenantId,
-            @PathVariable Long businessId
+            @PathVariable Long businessId,
+            @RequestHeader("X-Authenticated-User") String authenticatedUser
     ) {
         log.info("Fetching contact memory list for tenant ID: {} and business ID: {}", tenantId, businessId);
-        return contactMemoryService.listMemories(tenantId, businessId);
+        return contactMemoryService.listMemories(authenticatedUser, tenantId, businessId);
     }
 }
