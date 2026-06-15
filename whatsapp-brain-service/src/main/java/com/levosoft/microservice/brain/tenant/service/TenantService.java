@@ -3,7 +3,6 @@ package com.levosoft.microservice.brain.tenant.service;
 import com.levosoft.microservice.brain.tenant.dto.TenantRequest;
 import com.levosoft.microservice.brain.tenant.dto.TenantResponse;
 import com.levosoft.microservice.brain.tenant.model.Tenant;
-import com.levosoft.microservice.brain.tenant.model.TenantStatus;
 import com.levosoft.microservice.brain.tenant.repository.TenantRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +19,7 @@ import java.util.List;
 public class TenantService {
 
     private final TenantRepository tenantRepository;
-    private final KeycloakIdentityService keycloakIdentityService; // Injected clean boundary service
+    private final KeycloakIdentityService keycloakIdentityService;
 
     @Transactional
     public TenantResponse createTenant(TenantRequest tenantRequest) {
@@ -48,7 +47,6 @@ public class TenantService {
         Tenant savedTenant = tenantRepository.save(tenant);
         log.info("End - Tenant successfully saved with database sequence key: {}", savedTenant.getId());
 
-        // Trigger Keycloak orchestration via clean sub-service encapsulation
         keycloakIdentityService.provisionKeycloakUser(savedTenant);
 
         return mapToTenantResponse(savedTenant);
@@ -114,10 +112,8 @@ public class TenantService {
         Tenant tenant = tenantRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found with ID: " + id));
 
-        // 1. Drop data inside Keycloak using identity provider boundary module via unique username
         keycloakIdentityService.deprovisionKeycloakUser(tenant.getUsername());
 
-        // 2. Drop database row entity records
         tenantRepository.deleteById(id);
         log.info("Successfully dropped database metadata row for tenant ID: {}", id);
     }

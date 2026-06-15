@@ -42,23 +42,19 @@ public class SecurityConfig {
         return http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(authorize -> {
-                    // 1. Setup standard public rules
                     authorize
                             .requestMatchers("/actuator/**").permitAll()
                             .requestMatchers(PUBLIC_BROWSER_PATHS.toArray(String[]::new)).permitAll();
 
-                    // 2. Dynamically load protected paths from application.yml metadata
                     if (gatewayProperties.getRoutes() != null) {
                         gatewayProperties.getRoutes().forEach(route -> {
                             Map<String, Object> metadata = route.getMetadata();
                             if (metadata != null && metadata.containsKey("required-role")) {
                                 String requiredRole = (String) metadata.get("required-role");
 
-                                // Extract and clean comma-separated Path values
                                 List<String> paths = route.getPredicates().stream()
                                         .filter(p -> "Path".equalsIgnoreCase(p.getName()))
                                         .flatMap(p -> p.getArgs().values().stream())
-                                        // Split by comma in case multiple predicates are declared inline
                                         .flatMap(pathStr -> java.util.Arrays.stream(pathStr.split(",")))
                                         .map(String::trim)
                                         .collect(Collectors.toList());
@@ -70,11 +66,9 @@ public class SecurityConfig {
                         });
                     }
 
-                    // 3. Fallback catch-all
                     authorize.anyRequest().authenticated();
                 })
                 .exceptionHandling(exceptions -> exceptions.defaultAuthenticationEntryPointFor(loginEntryPoint, htmlRequestMatcher))
-                // Fixed: Explicitly mapped the browser login authorities to read Keycloak roles
                 .oauth2Login(oauth2 -> oauth2
                         .userInfoEndpoint(userInfo -> userInfo
                                 .userAuthoritiesMapper(userAuthoritiesMapper())

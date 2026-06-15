@@ -21,6 +21,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: '/var/lib/kafka/data'
     volumes:
       # Specific relative mapping with Fedora's :Z SELinux tag
       - ./kafka-data:/var/lib/kafka/data:Z
@@ -52,3 +53,23 @@ services:
       # Persists your uploaded PDFs on your machine using Fedora's SELinux flag
       - ./minio-data:/data:Z
     command: server /data --console-address ":9001"
+    # Added: Tells Docker how to verify that MinIO is fully ready to receive commands
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  # Added: Auto-creates your required application buckets on startup
+  minio-init:
+    image: minio/mc:latest
+    container_name: local-s3-initializer
+    depends_on:
+      minio:
+        condition: service_healthy # Block execution until the 'minio' healthcheck passes
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set locals3 http://minio:9000 local-access-key local-secret-key;
+      /usr/bin/mc mb --ignore-existing locals3/document-ingestion;
+      exit 0;
+      "

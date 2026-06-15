@@ -15,7 +15,7 @@ DO $$
         END IF;
 
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'document_status') THEN
-            CREATE TYPE document_status AS ENUM ('PENDING', 'PROCESSED', 'FAILED');
+            CREATE TYPE document_status AS ENUM ('PENDING', 'PROCESSING', 'PROCESSED', 'FAILED');
         END IF;
 
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'tenant_plan') THEN

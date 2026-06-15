@@ -47,58 +47,61 @@ public class KeycloakIdentityService {
     public void provisionKeycloakUser(Tenant tenant) {
         log.info("Connecting to Keycloak Admin API endpoint target for creation: {}", serverUrl);
 
+        // Optimization 1: Embedded credential directly in the initial payload to eliminate the 2nd network trip
+        CredentialRepresentation passwordCredential = new CredentialRepresentation();
+        passwordCredential.setType(CredentialRepresentation.PASSWORD);
+        passwordCredential.setValue("test");
+        passwordCredential.setTemporary(false);
+
+        // STEP 1: Construct the basic user profile metadata container
+        UserRepresentation user = new UserRepresentation();
+        user.setEnabled(true);
+        user.setUsername(tenant.getUsername().toLowerCase().trim()); // Clean input strings
+        user.setEmail(tenant.getEmail().trim());
+        user.setFirstName(tenant.getFirstName());
+        user.setLastName(tenant.getLastName());
+        user.setCredentials(Collections.singletonList(passwordCredential)); // Atomic binding
+        user.setRequiredActions(Collections.emptyList());
+
+        // to add these custom attributes you need to add them in keyclock relmSetting->userProfile->createAttribute
+        /*user.setAttributes(Map.of(
+                "tenant_id", Collections.singletonList(String.valueOf(tenant.getId())),
+                "tenant_plan", Collections.singletonList(String.valueOf(tenant.getPlan())),
+                "billing_status", Collections.singletonList(String.valueOf(tenant.getBillingStatus())),
+                "timezone", Collections.singletonList(tenant.getTimezone() != null ? tenant.getTimezone() : "UTC")
+        ));*/
+
         try (Keycloak keycloak = buildKeycloakClient()) {
             UsersResource usersResource = keycloak.realm(realm).users();
 
-            // STEP 1: Construct and save the basic user profile metadata container
-            UserRepresentation user = new UserRepresentation();
-            user.setEnabled(true);
-            user.setUsername(tenant.getUsername().toLowerCase());
-            user.setEmail(tenant.getEmail());
-            user.setFirstName(tenant.getFirstName());
-            user.setLastName(tenant.getLastName());
-
-            // Map all configuration boundaries dynamically into Keycloak user attributes
-            user.setAttributes(Map.of(
-                    "tenant_id", Collections.singletonList(String.valueOf(tenant.getId())),
-                    "tenant_plan", Collections.singletonList(String.valueOf(tenant.getPlan())),
-                    "billing_status", Collections.singletonList(String.valueOf(tenant.getBillingStatus())),
-                    "timezone", Collections.singletonList(tenant.getTimezone())
-            ));
-            user.setRequiredActions(Collections.emptyList()); // Ensures no post-login actions attach
-
-            String createdUserId;
             try (Response response = usersResource.create(user)) {
-                if (response.getStatus() != 201) {
-                    log.error("Keycloak registration rejected with HTTP status code: {}", response.getStatus());
+                int status = response.getStatus();
+
+                // Optimization 2: Extract explicit error reason body for 409 and other error states
+                if (status != 201) {
+                    String rawErrorJson = response.hasEntity() ? response.readEntity(String.class) : "No error body payload returned";
+
+                    log.error("Keycloak registration rejected with HTTP status code: {}. Root cause body: {}", status, rawErrorJson);
+
+                    if (status == 409) {
+                        throw new ResponseStatusException(HttpStatus.CONFLICT, "User identity profile details conflict: " + rawErrorJson);
+                    }
                     throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Keycloak automated user provisioning failed");
                 }
 
-                // Extract Keycloak's newly assigned internal UUID string from the response headers
-                String path = response.getLocation().getPath();
-                createdUserId = path.substring(path.lastIndexOf('/') + 1);
-                log.info("User container saved. Keycloak internal UUID generated: {}", createdUserId);
+                // Optimization 3: Safer ID parsing using the official client utility helper
+                String createdUserId = org.keycloak.admin.client.CreatedResponseUtil.getCreatedId(response);
+                log.info("User container saved securely. Keycloak internal UUID generated: {}, for tenant: {}", createdUserId, user.getUsername());
             }
-
-            // STEP 2: Target the specific user's credential resource endpoint directly
-            UserResource userResource = usersResource.get(createdUserId);
-
-            CredentialRepresentation passwordCredential = new CredentialRepresentation();
-            passwordCredential.setType(CredentialRepresentation.PASSWORD);
-            passwordCredential.setValue("test");
-            passwordCredential.setTemporary(false); // Keycloak strictly honors this flag when called separately
-
-            // Force override the password through the dedicated reset API
-            userResource.resetPassword(passwordCredential);
-            log.info("Password credentials successfully locked in as PERMANENT for tenant user: {}", user.getUsername());
 
         } catch (ResponseStatusException rse) {
             throw rse;
         } catch (Exception e) {
             log.error("Fatal connectivity exception transmitting data over to Keycloak engine profile layer", e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Identity provider sync breakdown");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Identity provider sync breakdown", e);
         }
     }
+
 
     public void deprovisionKeycloakUser(String username) {
         String usernameToSearch = username.toLowerCase();

@@ -1,8 +1,20 @@
 .idea
 .aider*
+credentials.txt
+.env
+**/.env
 logs
+
+# Runtime/generated data
+document-ingestion/
+**/document-ingestion/
+kafka-service/minio-data/
+kafka-service/kafka-data/
+**/.minio.sys/
+whatsapp-brain-service/logs/
+whatsapp-brain-service/logs/*.log
+
 # Database data directories
 whatsapp-brain-service/postgres-data/
 api-gateway/keycloak/postgres-data/
 **/postgres-data/
-kafka-service/minio-data/
