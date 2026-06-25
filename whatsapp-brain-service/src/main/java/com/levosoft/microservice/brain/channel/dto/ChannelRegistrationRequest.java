@@ -2,6 +2,7 @@ package com.levosoft.microservice.brain.channel.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 public record ChannelRegistrationRequest(
@@ -13,6 +14,10 @@ public record ChannelRegistrationRequest(
         @NotBlank(message = "displayName is required")
         @Size(min = 1, max = 255, message = "displayName must be between 1 and 255 characters")
         @Schema(description = "Display name for this channel registration", example = "Main WhatsApp Line", requiredMode = Schema.RequiredMode.REQUIRED)
-        String displayName
+        String displayName,
+
+        @NotNull(message = "businessId is required")
+        @Schema(description = "Unique identifier for the business", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
+        Long businessId
 ) {
 }

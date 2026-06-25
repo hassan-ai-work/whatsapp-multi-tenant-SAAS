@@ -58,7 +58,7 @@ spring:
             - id: tenant_business_channel_service
               uri: http://localhost:8080
               predicates:
-                - Path=/v1/tenants/businesses/*/channels,/v1/tenants/businesses/*/channels/**
+                - Path=/v1/tenant/businesses/channels,/v1/tenant/businesses/channels/*
               filters:
                 - TokenRelay=
                 - InjectUsername=

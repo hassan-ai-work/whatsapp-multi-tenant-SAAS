@@ -1,279 +1,115 @@
 #!/bin/bash
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
 # Configuration
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 SERVICES=("api-gateway" "kafka-service" "whatsapp-brain-service")
 PORTS=("9000" "8080" "8080")
 DEBUG_PORTS=("5005" "5006" "5007")
-SELECTED_SERVICES=()
+SELECTED_SERVICES=(); ACTIVE_SERVICES=(); ACTIVE_PORTS=(); ACTIVE_DEBUG_PORTS=()
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_DIR="$PROJECT_ROOT/logs"
-PID_FILE="$PROJECT_ROOT/.microservices.pids"
-DEBUG_MODE=false
-DEBUG_SUSPEND="n"
-START_INFRA=false
-START_SERVICES=false
+LOG_DIR="$PROJECT_ROOT/logs"; PID_FILE="$PROJECT_ROOT/.microservices.pids"
+DEBUG_MODE=false; DEBUG_SUSPEND="n"; START_INFRA=false; START_SERVICES=false
+export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/temurin-21-jdk}"
 
-# Set JAVA_HOME if not already set
-if [ -z "$JAVA_HOME" ]; then
-    export JAVA_HOME="/usr/lib/jvm/temurin-21-jdk"
-fi
-
-print_status() {
-    echo -e "${GREEN}✓${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}⚠${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}✗${NC} $1"
+log() {
+    local symbol="✓"; local color=$GREEN; [[ $1 == "warn" ]] && { symbol="⚠"; color=$YELLOW; }; [[ $1 == "err" ]] && { symbol="✗"; color=$RED; }; echo -e "${color}${symbol}${NC} $2"
 }
 
 print_usage() {
-    cat <<EOF
-Usage: bash start-services.sh [options] [service-flags]
-
-Options:
-  --start-infra             Start docker infrastructure services only.
-  --start-services          Build and start selected services locally.
-  --all                     Start both infrastructure and selected services.
-  --debug                   Start selected services with remote debugging enabled.
-  --debug-suspend           Start selected services in debug mode and wait for the debugger to attach.
-  --api-gateway             Select api-gateway.
-  --kafka-service           Select kafka-service.
-  --whatsapp-brain-service  Select whatsapp-brain-service.
-  --help                    Show this help message.
-
-Examples:
-  bash start-services.sh --start-infra
-  bash start-services.sh --start-services --api-gateway
-  bash start-services.sh --all --debug --api-gateway --kafka-service
-
-Notes:
-  - If no service flags are provided, all services are selected.
-  - Use --start-infra when you only want Docker dependencies running.
-  - Run services from IntelliJ if you want IDE debugging instead of script-based startup.
-
-Remote debug ports:
-  api-gateway              5005
-  kafka-service            5006
-  whatsapp-brain-service   5007
-EOF
+    echo -e "${BLUE}Usage:${NC} bash start-services.sh [options] [service-flags]\n"
+    echo "Options: --start-infra, --start-services, --all, --debug, --debug-suspend, --help"
+    echo -e "Service Flags: --api-gateway (5005), --kafka-service (5006), --whatsapp-brain-service (5007)\n"
+    echo "Note: If no service flags are provided, all services are selected."
 }
 
-add_selected_service() {
-    local service=$1
-    for existing in "${SELECTED_SERVICES[@]}"; do
-        if [ "$existing" = "$service" ]; then
-            return
-        fi
-    done
-    SELECTED_SERVICES+=("$service")
-}
-
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}Microservices Startup Script${NC}"
-echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}========================================\nMicroservices Startup Script\n========================================${NC}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --start-infra)
-            START_INFRA=true
-            ;;
-        --start-services)
-            START_SERVICES=true
-            ;;
-        --all)
-            START_INFRA=true
-            START_SERVICES=true
-            ;;
-        --debug)
-            DEBUG_MODE=true
-            ;;
-        --debug-suspend)
-            DEBUG_MODE=true
-            DEBUG_SUSPEND="y"
-            ;;
-        --api-gateway)
-            add_selected_service "api-gateway"
-            ;;
-        --kafka-service)
-            add_selected_service "kafka-service"
-            ;;
-        --whatsapp-brain-service)
-            add_selected_service "whatsapp-brain-service"
-            ;;
-        --help)
-            print_usage
-            exit 0
-            ;;
-        *)
-            print_error "Unknown option: $1"
-            echo
-            print_usage
-            exit 1
-            ;;
+        --start-infra) START_INFRA=true ;;
+        --start-services) START_SERVICES=true ;;
+        --all) START_INFRA=true; START_SERVICES=true ;;
+        --debug) DEBUG_MODE=true ;;
+        --debug-suspend) DEBUG_MODE=true; DEBUG_SUSPEND="y" ;;
+        --help) print_usage; exit 0 ;;
+        *)  match=false
+            for s in "${SERVICES[@]}"; do [[ "--$s" == "$1" ]] && { SELECTED_SERVICES+=("$s"); match=true; break; }; done
+            $match || { log "err" "Unknown option: $1"; echo; print_usage; exit 1; } ;;
     esac
     shift
 done
 
-if [ "$START_INFRA" = false ] && [ "$START_SERVICES" = false ]; then
-    print_warning "No start mode selected."
-    echo
-    print_usage
-    exit 1
-fi
+[[ "$START_INFRA" = false && "$START_SERVICES" = false ]] && { log "warn" "No start mode selected.\n"; print_usage; exit 1; }
 
-ACTIVE_SERVICES=()
-ACTIVE_PORTS=()
-ACTIVE_DEBUG_PORTS=()
-
-if [ ${#SELECTED_SERVICES[@]} -eq 0 ]; then
-    ACTIVE_SERVICES=("${SERVICES[@]}")
-    ACTIVE_PORTS=("${PORTS[@]}")
-    ACTIVE_DEBUG_PORTS=("${DEBUG_PORTS[@]}")
-else
-    for selected in "${SELECTED_SERVICES[@]}"; do
-        for i in "${!SERVICES[@]}"; do
-            if [ "${SERVICES[$i]}" = "$selected" ]; then
-                ACTIVE_SERVICES+=("${SERVICES[$i]}")
-                ACTIVE_PORTS+=("${PORTS[$i]}")
-                ACTIVE_DEBUG_PORTS+=("${DEBUG_PORTS[$i]}")
-                break
-            fi
-        done
-    done
-fi
-
-if [ "$DEBUG_MODE" = true ] && [ "$START_SERVICES" = false ]; then
-    print_warning "--debug was provided, but services will not be started by this script."
-fi
-
-if [ "$DEBUG_MODE" = true ] && [ "$START_SERVICES" = true ]; then
-    print_warning "Debug mode enabled (suspend=${DEBUG_SUSPEND})"
-fi
-
-# Prepare runtime directories
-mkdir -p "$LOG_DIR"
-print_status "Logs directory ready: $LOG_DIR"
-
-if [ "$START_SERVICES" = true ]; then
-    rm -f "$PID_FILE"
-fi
-
-# Clean up legacy root-level service logs
-for SERVICE in "${SERVICES[@]}"; do
-    rm -f "$PROJECT_ROOT/${SERVICE}.log"
+for i in "${!SERVICES[@]}"; do
+    s="${SERVICES[$i]}"
+    if [[ ${#SELECTED_SERVICES[@]} -eq 0 ]]; then
+        found=true
+    else
+        found=false; for sel in "${SELECTED_SERVICES[@]}"; do [[ "$sel" == "$s" ]] && found=true; done
+    fi
+    $found && { ACTIVE_SERVICES+=("$s"); ACTIVE_PORTS+=("${PORTS[$i]}"); ACTIVE_DEBUG_PORTS+=("${DEBUG_PORTS[$i]}"); }
 done
 
-# Start infrastructure only if requested
+[[ "$DEBUG_MODE" = true && "$START_SERVICES" = false ]] && log "warn" "--debug provided, but services will not start."
+[[ "$DEBUG_MODE" = true && "$START_SERVICES" = true ]] && log "warn" "Debug mode enabled (suspend=${DEBUG_SUSPEND})"
+
+mkdir -p "$LOG_DIR" && log "ok" "Logs directory ready: $LOG_DIR"
+[[ "$START_SERVICES" = true ]] && rm -f "$PID_FILE"
+for s in "${SERVICES[@]}"; do rm -f "$PROJECT_ROOT/${s}.log"; done
+
 if [ "$START_INFRA" = true ]; then
+    echo -e "\n${BLUE}Checking System Services...${NC}"
+    if systemctl is-active --quiet ollama; then log "ok" "Ollama service is already running"
+    else echo -e "${BLUE}Starting Ollama...${NC}"; sudo systemctl start ollama && log "ok" "Ollama started" || { log "err" "Failed to start Ollama"; exit 1; }; fi
+
     echo -e "\n${BLUE}Checking Docker...${NC}"
-    if ! docker info > /dev/null 2>&1; then
-        print_error "Docker is not running. Please start Docker first."
-        exit 1
-    fi
-    print_status "Docker is running"
+    docker info > /dev/null 2>&1 || { log "err" "Docker is not running."; exit 1; }; log "ok" "Docker is running"
 
-    echo -e "\n${BLUE}Starting infrastructure services...${NC}"
-    cd "$PROJECT_ROOT" || exit 1
-    docker compose up -d
-    if [ $? -eq 0 ]; then
-        print_status "Infrastructure services started successfully"
-        print_warning "The root docker-compose.yaml currently includes configurations from:"
-        echo -e "  • api-gateway/docker-compose.yaml (Keycloak + PostgreSQL)"
-        echo -e "  • kafka-service/docker-compose.yaml (Kafka + Kafka UI + MinIO)"
-        echo -e "  • whatsapp-brain-service/docker-compose.yaml"
-    else
-        print_error "Failed to start infrastructure services"
-        exit 1
-    fi
-
-    echo -e "\n${BLUE}Waiting for infrastructure services to initialize...${NC}"
-    sleep 10
+    echo -e "\n${BLUE}Starting infrastructure...${NC}"
+    cd "$PROJECT_ROOT" && docker compose up -d
+    [[ $? -eq 0 ]] && { log "ok" "Infra started successfully"; log "warn" "Root docker includes configurations for Gateway, Kafka, and Brain."; sleep 10; } || { log "err" "Failed to start infra"; exit 1; }
 else
-    print_warning "Skipping infrastructure startup. Start it manually with: docker compose up -d"
+    log "warn" "Skipping infrastructure startup. Run manually with: docker compose up -d"
 fi
-
-# Build and start services only if requested
 if [ "$START_SERVICES" = true ]; then
     echo -e "\n${BLUE}Building selected modules...${NC}"
-    for SERVICE in "${ACTIVE_SERVICES[@]}"; do
-        SERVICE_BUILD_LOG="$LOG_DIR/build-${SERVICE}.log"
-        echo -e "\n${BLUE}Building ${SERVICE}...${NC}"
-
-        cd "$PROJECT_ROOT/$SERVICE" || {
-            print_error "Service directory not found: $PROJECT_ROOT/$SERVICE"
-            exit 1
-        }
-
-        export JAVA_HOME="/usr/lib/jvm/temurin-21-jdk"
-        ./mvnw clean package -DskipTests -q > "$SERVICE_BUILD_LOG" 2>&1
-
-        if [ $? -eq 0 ]; then
-            print_status "${SERVICE} built successfully"
-            print_warning "Build logs: $SERVICE_BUILD_LOG"
-        else
-            print_error "${SERVICE} build failed. Check: $SERVICE_BUILD_LOG"
-            exit 1
-        fi
+    for s in "${ACTIVE_SERVICES[@]}"; do
+        BUILD_LOG="$LOG_DIR/build-${s}.log"
+        echo -e "\n${BLUE}Building ${s}...${NC}"
+        cd "$PROJECT_ROOT/$s" || { log "err" "Directory not found: $s"; exit 1; }
+        ./mvnw clean package -DskipTests -q > "$BUILD_LOG" 2>&1
+        [[ $? -eq 0 ]] && log "ok" "${s} built. Logs: $BUILD_LOG" || { log "err" "${s} build failed. Check $BUILD_LOG"; exit 1; }
     done
 
     echo -e "\n${BLUE}Starting microservices...${NC}"
     for i in "${!ACTIVE_SERVICES[@]}"; do
-        SERVICE="${ACTIVE_SERVICES[$i]}"
-        PORT="${ACTIVE_PORTS[$i]}"
-
-        echo -e "\n${BLUE}Starting ${SERVICE} on port ${PORT}...${NC}"
-
-        cd "$PROJECT_ROOT/$SERVICE" || {
-            print_error "Service directory not found: $PROJECT_ROOT/$SERVICE"
-            exit 1
-        }
-
-        export JAVA_HOME="/usr/lib/jvm/temurin-21-jdk"
-        STARTUP_LOG="$LOG_DIR/startup-${SERVICE}.log"
+        s="${ACTIVE_SERVICES[$i]}"; p="${ACTIVE_PORTS[$i]}"
+        echo -e "\n${BLUE}Starting ${s} on port ${p}...${NC}"
+        cd "$PROJECT_ROOT/$s" || { log "err" "Directory not found: $s"; exit 1; }
+        START_LOG="$LOG_DIR/startup-${s}.log"
 
         if [ "$DEBUG_MODE" = true ]; then
-            DEBUG_PORT="${ACTIVE_DEBUG_PORTS[$i]}"
-            nohup ./mvnw spring-boot:run "-Dspring-boot.run.jvmArguments=-agentlib:jdwp=transport=dt_socket,server=y,suspend=${DEBUG_SUSPEND},address=*:${DEBUG_PORT}" > "$STARTUP_LOG" 2>&1 &
+            dp="${ACTIVE_DEBUG_PORTS[$i]}"
+            nohup ./mvnw spring-boot:run "-Dspring-boot.run.jvmArguments=-agentlib:jdwp=transport=dt_socket,server=y,suspend=${DEBUG_SUSPEND},address=*:${dp}" > "$START_LOG" 2>&1 &
         else
-            nohup ./mvnw spring-boot:run > "$STARTUP_LOG" 2>&1 &
+            nohup ./mvnw spring-boot:run > "$START_LOG" 2>&1 &
         fi
-
-        PID=$!
-        echo "$PID" >> "$PID_FILE"
-
-        print_status "${SERVICE} started (PID: $PID)"
-        print_warning "Startup logs: tail -f $STARTUP_LOG"
-        print_warning "Application logs may be available under: $PROJECT_ROOT/$SERVICE/logs/"
-        if [ "$DEBUG_MODE" = true ]; then
-            print_warning "Remote debug: attach IntelliJ to localhost:${DEBUG_PORT}"
-        fi
-
+        pid=$!; echo "$pid" >> "$PID_FILE"
+        log "ok" "${s} started (PID: $pid)"
+        log "warn" "Logs: tail -f $START_LOG"
+        [[ "$DEBUG_MODE" = true ]] && log "warn" "Debug: attach IDE to port ${dp}"
         sleep 5
     done
 else
-    print_warning "Skipping service startup. Run services from IntelliJ for local debugging."
+    log "warn" "Skipping service startup. Run from your IDE for local debugging."
 fi
 
-echo -e "\n${BLUE}========================================${NC}"
-echo -e "${GREEN}Requested startup actions completed!${NC}"
-echo -e "${BLUE}========================================${NC}"
+echo -e "\n${BLUE}========================================\nRequested startup actions completed!\n========================================${NC}"
 
 if [ "$START_SERVICES" = true ]; then
     echo -e "\nServices running on:"
-    for i in "${!ACTIVE_SERVICES[@]}"; do
-        echo -e "  ${GREEN}${ACTIVE_SERVICES[$i]}${NC}: http://localhost:${ACTIVE_PORTS[$i]}"
-    done
+    for i in "${!ACTIVE_SERVICES[@]}"; do echo -e "  ${GREEN}${ACTIVE_SERVICES[$i]}${NC}: http://localhost:${ACTIVE_PORTS[$i]}"; done
 fi
 
 if [ "$START_INFRA" = true ]; then
@@ -282,31 +118,25 @@ if [ "$START_INFRA" = true ]; then
     echo -e "  ${GREEN}Kafka UI${NC}: http://localhost:8989/kafka-ui"
     echo -e "  ${GREEN}MinIO API${NC}: http://localhost:9005"
     echo -e "  ${GREEN}MinIO Console${NC}: http://localhost:9006"
+
+    # Verifying Ollama status for the output summary
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:11434 | grep -q "200"; then
+        echo -e "  ${GREEN}Ollama API${NC}: http://localhost:11434 (Running)"
+    else
+        echo -e "  ${RED}Ollama API${NC}: http://localhost:11434 (Service active but API unreachable)"
+    fi
 fi
 
 if [ "$START_SERVICES" = true ]; then
     echo -e "\n${YELLOW}To view logs:${NC}"
-    for SERVICE in "${ACTIVE_SERVICES[@]}"; do
-        echo -e "  tail -f $LOG_DIR/build-${SERVICE}.log"
-        echo -e "  tail -f $LOG_DIR/startup-${SERVICE}.log"
-    done
+    for s in "${ACTIVE_SERVICES[@]}"; do echo -e "  tail -f $LOG_DIR/startup-${s}.log"; done
 fi
 
 if [ "$DEBUG_MODE" = true ] && [ "$START_SERVICES" = true ]; then
     echo -e "\n${YELLOW}Remote debug ports:${NC}"
-    for i in "${!ACTIVE_SERVICES[@]}"; do
-        echo -e "  ${GREEN}${ACTIVE_SERVICES[$i]}${NC}: localhost:${ACTIVE_DEBUG_PORTS[$i]}"
-    done
+    for i in "${!ACTIVE_SERVICES[@]}"; do echo -e "  ${GREEN}${ACTIVE_SERVICES[$i]}${NC}: localhost:${ACTIVE_DEBUG_PORTS[$i]}"; done
 fi
 
-echo -e "\n${YELLOW}To stop script-started services:${NC}"
-echo -e "  bash $PROJECT_ROOT/stop-services.sh"
-
-echo -e "\n${YELLOW}To check service status:${NC}"
-echo -e "  bash $PROJECT_ROOT/check-services.sh"
-
-echo -e "\n${YELLOW}Examples:${NC}"
-echo -e "  Start only infra:     bash $PROJECT_ROOT/start-services.sh --start-infra"
-echo -e "  Start only services:  bash $PROJECT_ROOT/start-services.sh --start-services --api-gateway"
-echo -e "  Start both:           bash $PROJECT_ROOT/start-services.sh --all"
-echo -e "  IntelliJ workflow:    docker compose up -d   # then run services from IntelliJ"
+echo -e "\n${YELLOW}Management Utilities:${NC}"
+echo -e "  Stop Services:  bash $PROJECT_ROOT/stop-services.sh"
+echo -e "  Check Status:   bash $PROJECT_ROOT/check-services.sh"
