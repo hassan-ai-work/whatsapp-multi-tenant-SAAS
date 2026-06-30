@@ -1,0 +1,88 @@
+server:
+  port: ${CHAT_SERVICE_PORT:8084}
+
+spring:
+  application:
+    name: chat-service
+  datasource:
+    url: ${CHAT_DATASOURCE_URL:jdbc:postgresql://localhost:5432/replato}
+    username: ${CHAT_DATASOURCE_USERNAME:postgres}
+    password: ${CHAT_DATASOURCE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  kafka:
+    bootstrap-servers: ${CHAT_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${CHAT_KAFKA_GROUP_ID:chat-service-consumer}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+  data:
+    redis:
+      host: ${CHAT_REDIS_HOST:localhost}
+      port: ${CHAT_REDIS_PORT:6379}
+      database: ${CHAT_REDIS_DATABASE:0}
+  flyway:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+openapi:
+  enabled: true
+
+chat:
+  kafka:
+    incoming-topic: incoming-customer-messages
+    group-id: ${CHAT_KAFKA_GROUP_ID:chat-service-consumer}
+    dead-letter-topic: ${CHAT_KAFKA_DEAD_LETTER_TOPIC:incoming-customer-messages-dlq}
+    dead-letter-max-attempts: ${CHAT_KAFKA_DEAD_LETTER_MAX_ATTEMPTS:3}
+    dead-letter-backoff-ms: ${CHAT_KAFKA_DEAD_LETTER_BACKOFF_MS:200}
+  redis:
+    keyspace-listener-enabled: ${CHAT_REDIS_KEYSPACE_LISTENER_ENABLED:false}
+  session:
+    key-prefix: session
+    snapshot-prefix: session-snapshot
+    ttl: 30m
+    snapshot-ttl: 7d
+  llm:
+    provider: ${CHAT_LLM_PROVIDER:ollama}
+    model: ${CHAT_LLM_MODEL:llama3.2}
+    base-url: ${CHAT_LLM_BASE_URL:http://localhost:11434}
+    api-key: ${CHAT_LLM_API_KEY:}
+  embedding:
+    provider: ${CHAT_EMBEDDING_PROVIDER:openai}
+    model: ${CHAT_EMBEDDING_MODEL:text-embedding-3-small}
+    base-url: ${CHAT_EMBEDDING_BASE_URL:https://api.openai.com/v1}
+    api-key: ${CHAT_EMBEDDING_API_KEY:}
+    dimensions: 1536
+  rag:
+    max-results: 5
+    minimum-score: 0.55
+    prompt-template: |
+      You are a generic multi-tenant assistant.
+      Tenant identity: {{tenant_identity}}
+      Customer identity: {{customer_identity}}
+      Document chunks:
+      {{document_context_chunks}}
+      Chat history:
+      {{chat_history_from_redis}}
+      Current customer message:
+      {{current_customer_message}}
+
+      Rules:
+      - Use only the document chunks and chat history.
+      - If the document chunks are empty or do not contain enough evidence, reply with a polite unavailable message.
+      - Never invent facts.
+      - Keep the answer concise and helpful.
+  inbound:
+    max-message-length: ${CHAT_INBOUND_MAX_MESSAGE_LENGTH:2000}
+  outbound:
+    endpoint: ${CHAT_OUTBOUND_ENDPOINT:http://localhost:8080/internal/channel/egress}
+    timeout: 5s
+

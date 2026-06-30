@@ -1,0 +1,37 @@
+services:
+  chat-service:
+    build:
+      context: .
+    container_name: chat-service
+    ports:
+      - "8084:8084"
+    environment:
+      CHAT_SERVICE_PORT: 8084
+      CHAT_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      CHAT_DATASOURCE_URL: jdbc:postgresql://postgres:5432/replato
+      CHAT_DATASOURCE_USERNAME: postgres
+      CHAT_DATASOURCE_PASSWORD: postgres
+      CHAT_REDIS_HOST: redis
+      CHAT_REDIS_PORT: 6379
+      CHAT_LLM_PROVIDER: ollama
+      CHAT_LLM_BASE_URL: http://host.docker.internal:11434
+      CHAT_EMBEDDING_PROVIDER: openai
+      CHAT_EMBEDDING_BASE_URL: https://api.openai.com/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
+    networks:
+      - default
+
+  redis:
+    image: redis:7-alpine
+    container_name: chat-service-redis
+    command: ["redis-server", "--notify-keyspace-events", "Ex"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis-data:/data
+    networks:
+      - default
+
