@@ -2,9 +2,9 @@
 
 # Configuration
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-SERVICES=("api-gateway" "kafka-service" "whatsapp-brain-service")
-PORTS=("9000" "8080" "8080")
-DEBUG_PORTS=("5005" "5006" "5007")
+SERVICES=("api-gateway" "kafka-service" "whatsapp-brain-service" "chat-service")
+PORTS=("9000" "8080" "8080" "8084")
+DEBUG_PORTS=("5005" "5006" "5007" "5008")
 SELECTED_SERVICES=(); ACTIVE_SERVICES=(); ACTIVE_PORTS=(); ACTIVE_DEBUG_PORTS=()
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="$PROJECT_ROOT/logs"; PID_FILE="$PROJECT_ROOT/.microservices.pids"
@@ -18,7 +18,7 @@ log() {
 print_usage() {
     echo -e "${BLUE}Usage:${NC} bash start-services.sh [options] [service-flags]\n"
     echo "Options: --start-infra, --start-services, --all, --debug, --debug-suspend, --help"
-    echo -e "Service Flags: --api-gateway (5005), --kafka-service (5006), --whatsapp-brain-service (5007)\n"
+    echo -e "Service Flags: --api-gateway (5005), --kafka-service (5006), --whatsapp-brain-service (5007), --chat-service (5008)\n"
     echo "Note: If no service flags are provided, all services are selected."
 }
 
@@ -139,4 +139,4 @@ fi
 
 echo -e "\n${YELLOW}Management Utilities:${NC}"
 echo -e "  Stop Services:  bash $PROJECT_ROOT/stop-services.sh"
-echo -e "  Check Status:   bash $PROJECT_ROOT/check-services.sh"
+echo -e "  Check Status:   bash $PROJECT_ROOT/check-status.sh"

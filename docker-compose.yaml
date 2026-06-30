@@ -14,6 +14,7 @@ include:
   - api-gateway/docker-compose.yaml
   - kafka-service/docker-compose.yaml
   - whatsapp-brain-service/docker-compose.yaml
+  - chat-service/docker-compose.yaml
 
 networks:
   default:

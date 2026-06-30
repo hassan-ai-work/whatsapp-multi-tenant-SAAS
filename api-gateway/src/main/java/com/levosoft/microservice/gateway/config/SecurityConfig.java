@@ -17,6 +17,9 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
+import org.springframework.web.client.RestTemplate;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -34,6 +37,10 @@ public class SecurityConfig {
             "/fallback/**"
     );
 
+    private static final List<String> PUBLIC_API_PATHS = List.of(
+            "/webhook/**"
+    );
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, GatewayMvcProperties gatewayProperties) throws Exception {
         RequestMatcher htmlRequestMatcher = new MediaTypeRequestMatcher(org.springframework.http.MediaType.TEXT_HTML);
@@ -44,7 +51,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> {
                     authorize
                             .requestMatchers("/actuator/**").permitAll()
-                            .requestMatchers(PUBLIC_BROWSER_PATHS.toArray(String[]::new)).permitAll();
+                            .requestMatchers(PUBLIC_BROWSER_PATHS.toArray(String[]::new)).permitAll()
+                            .requestMatchers(PUBLIC_API_PATHS.toArray(String[]::new)).permitAll();
 
                     if (gatewayProperties.getRoutes() != null) {
                         gatewayProperties.getRoutes().forEach(route -> {
@@ -114,5 +122,15 @@ public class SecurityConfig {
             }
         });
         return converter;
+    }
+
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
+
+    @Bean
+    public ObjectMapper objectMapper() {
+        return JsonMapper.builder().build();
     }
 }

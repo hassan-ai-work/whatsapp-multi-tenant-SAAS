@@ -10,8 +10,8 @@ NC='\033[0m' # No Color
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="$PROJECT_ROOT/logs"
 
-SERVICES=("api-gateway" "product-service" "order-service" "inventory-service" "kafka-service" "notification-service")
-PORTS=("9000" "8080" "8081" "8082" "8989" "8083")
+SERVICES=("api-gateway" "product-service" "order-service" "inventory-service" "kafka-service" "notification-service" "chat-service")
+PORTS=("9000" "8080" "8081" "8082" "8989" "8083" "8084")
 SELECTED_SERVICES=()
 START_INFRA=false
 
@@ -51,6 +51,7 @@ Service flags:
   --inventory-service
   --kafka-service
   --notification-service
+  --chat-service
 EOF
 }
 
@@ -160,6 +161,9 @@ for arg in "$@"; do
             ;;
         --notification-service)
             add_selected_service "notification-service"
+            ;;
+        --chat-service)
+            add_selected_service "chat-service"
             ;;
         --start-infra)
             START_INFRA=true

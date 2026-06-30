@@ -14,6 +14,14 @@ logging:
   file:
     name: logs/api-gateway.log
 
+whatsapp:
+  webhook:
+    public-url: https://finance-suave-capable.ngrok-free.dev
+    verify-token: WEB_TOKEN_TEXT
+
+chat-service:
+  url: ${CHAT_SERVICE_URL:http://localhost:8084}
+
 openapi:
   gateway:
     docs-access-token: ${OPENAPI_GATEWAY_DOCS_ACCESS_TOKEN:local-gateway-docs-token}

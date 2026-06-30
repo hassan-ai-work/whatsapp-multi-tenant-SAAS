@@ -3,8 +3,8 @@
 # Configuration
 RED='\033;0/31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVICES=("api-gateway" "kafka-service" "whatsapp-brain-service")
-PORTS=("9000" "8080" "8080")
+SERVICES=("api-gateway" "kafka-service" "whatsapp-brain-service" "chat-service")
+PORTS=("9000" "8080" "8080" "8084")
 SELECTED_SERVICES=(); STOP_INFRA=false; STOP_ALL=false
 
 log() {
@@ -14,7 +14,7 @@ log() {
 print_usage() {
     echo -e "${BLUE}Usage:${NC} bash stop-services.sh [options] [service-flags]\n"
     echo "Options: --stop-infra, --all, --help"
-    echo "Service Flags: --api-gateway, --kafka-service, --whatsapp-brain-service"
+    echo "Service Flags: --api-gateway, --kafka-service, --whatsapp-brain-service, --chat-service"
 }
 
 echo -e "${BLUE}========================================\nStopping Microservices\n========================================${NC}"
